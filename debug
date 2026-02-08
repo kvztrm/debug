@@ -1,0 +1,149 @@
+-- TEMP DEBUG SCRIPT - Webhook Test + Fish Scanner
+-- Run this to see why 400 happens
+
+local HttpService = game:GetService("HttpService")
+local RunService = game:GetService("RunService")
+
+local WEBHOOK_URL = "https://discord.com/api/webhooks/1469813322936356956/7vOLfjATJUvnwcKcUACeMOpC6-KssMk6P6pSsNzajaJXHRWY5PhPuq9rE2WJQsNJ2u2n"
+
+local THRESHOLD = 50
+local MAX_INDEX = 150
+local SCAN_INTERVAL = 90
+local DEBUG = true
+
+-- Your exact webhook sender (unchanged)
+local function SendWebhook(payload)
+    local headers = {["Content-Type"] = "application/json"}
+    local body = HttpService:JSONEncode(payload)
+    
+    -- DEBUG: Print the exact body being sent
+    print("[DEBUG] Sending this JSON:")
+    print(body)
+    
+    local success, response = pcall(function()
+        return request({
+            Url = WEBHOOK_URL,
+            Method = "POST",
+            Headers = headers,
+            Body = body
+        })
+    end)
+    
+    if success then
+        print("[WEBHOOK] Sent! Status: " .. (response.StatusCode or "no code"))
+        if response.Body then
+            print("[WEBHOOK] Response body: " .. response.Body)
+        end
+    else
+        warn("[WEBHOOK] Failed: " .. tostring(response))
+    end
+end
+
+-- Quick manual test on script start (runs once)
+print("[TEST] Sending simple test message...")
+SendWebhook({content = "DEBUG TEST - " .. os.date("%H:%M:%S") .. " - This should appear if webhook works"})
+
+-- Folders
+local fpp = workspace:WaitForChild("FrameWork_WorkSpace", 10)
+    :WaitForChild("FishPPPart", 5)
+
+local folder1 = fpp:WaitForChild("Folder1", 5)
+local folder2 = fpp:WaitForChild("Folder2", 5)
+local folder3 = fpp:WaitForChild("Folder3", 5)
+
+local folders = {folder1, folder2, folder3}
+
+-- Get text from ProximityPrompt
+local function getPromptText(part)
+    if not part then return nil end
+
+    local prompt = part:FindFirstChild("PPPart_PP")
+    if not prompt or not prompt:IsA("ProximityPrompt") then return nil end
+
+    local obj = prompt.ObjectText or ""
+    local act = prompt.ActionText or ""
+    return obj .. " " .. act
+end
+
+-- Extract percentage
+local function extractPercentage(text)
+    if not text or text == "" then return nil end
+
+    local clean = text:lower():gsub("%s+", "")
+    local patterns = {
+        "(%d+%.?%d*)%%",
+        "(%d+)%%",
+        "(%d+%.?%d*) ?percent",
+        "%%(%d+)"
+    }
+
+    for _, pat in ipairs(patterns) do
+        local numStr = clean:match(pat)
+        if numStr then
+            local v = tonumber(numStr)
+            if v and v >= THRESHOLD then return v end
+        end
+    end
+
+    return nil
+end
+
+-- Send grouped webhook
+local lastSend = 0
+
+local function sendGrouped(detected)
+    local now = tick()
+    if now - lastSend < 30 then return end
+    lastSend = now
+
+    if #detected == 0 then return end
+
+    local lines = {}
+    for i, f in ipairs(detected) do
+        table.insert(lines, i .. ". **" .. f.name .. "** - **" .. f.percent .. "%**")
+    end
+
+    local message = "**Fish ≥ " .. THRESHOLD .. "% (" .. #detected .. " total):**\n" .. table.concat(lines, "\n")
+
+    SendWebhook({content = message})
+end
+
+-- Scan loop (indices 0–150)
+local lastScan = 0
+
+RunService.Heartbeat:Connect(function()
+    local now = tick()
+    if now - lastScan < SCAN_INTERVAL then return end
+    lastScan = now
+
+    if DEBUG then print("[SCAN START] Checking 0–" .. MAX_INDEX .. "...") end
+
+    local detected = {}
+
+    for fIdx, folder in ipairs(folders) do
+        if not folder then continue end
+
+        for i = 0, MAX_INDEX do
+            local child = folder:GetChildren()[i + 1]
+            if not child then continue end
+
+            local text = getPromptText(child)
+            if text then
+                local value = extractPercentage(text)
+                if value then
+                    local name = child.Name or ("Idx " .. i)
+                    table.insert(detected, {name = name, percent = value})
+                    if DEBUG then
+                        print("[DETECT] " .. name .. " @ " .. value .. "%")
+                    end
+                end
+            end
+        end
+    end
+
+    sendGrouped(detected)
+
+    if DEBUG then print("[SCAN END] Found " .. #detected .. " fish ≥ " .. THRESHOLD .. "%") end
+end)
+
+print("[FishScanner] Active - threshold ≥ " .. THRESHOLD .. "% - indices 0–" .. MAX_INDEX)
