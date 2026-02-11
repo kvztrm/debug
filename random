@@ -1,7 +1,9 @@
 --[[
-    Aimbot Script
-    - Press Q to toggle aimlock on/off
-    - Automatically aims at closest player to you
+    Player Detection & Teleport Script
+    - Press Q to toggle script on/off
+    - Automatically detects closest player to mouse cursor
+    - Highlights detected player
+    - Press E to teleport around detected player (5 stud radius in front/side)
 ]]
 
 local Players = game:GetService("Players")
@@ -10,28 +12,36 @@ local UserInputService = game:GetService("UserInputService")
 local TweenService = game:GetService("TweenService")
 
 local LocalPlayer = Players.LocalPlayer
-local Camera = workspace.CurrentCamera
+local Mouse = LocalPlayer:GetMouse()
 
 -- Script State
-local aimlockEnabled = false
-local aimlockTarget = nil
-local aimSpeed = 0.5
-local detectionRange = 100
+local scriptEnabled = false
+local highlightedPlayer = nil
+local highlightFrame = nil
+local detectionRange = 1000
 
--- Find closest player to local player
-function findClosestPlayer()
+-- Create highlight UI
+function createHighlightUI()
+    if highlightFrame then highlightFrame:Destroy() end
+    
+    highlightFrame = Instance.new("Frame")
+    highlightFrame.Size = UDim2.new(1, 0, 1, 0)
+    highlightFrame.BackgroundTransparency = 1
+    highlightFrame.BackgroundColor3 = Color3.fromRGB(0, 150, 255)
+    highlightFrame.BorderColor3 = Color3.fromRGB(0, 150, 255)
+    highlightFrame.BorderSizePixel = 3
+    highlightFrame.ZIndex = 10
+end
+
+-- Find closest player to mouse
+function findClosestPlayerToMouse()
     local closestPlayer = nil
     local closestDistance = detectionRange
-    
-    local character = LocalPlayer.Character
-    if not character or not character:FindFirstChild("HumanoidRootPart") then return nil end
-    
-    local myRoot = character.HumanoidRootPart
     
     for _, player in ipairs(Players:GetPlayers()) do
         if player ~= LocalPlayer and player.Character and player.Character:FindFirstChild("HumanoidRootPart") then
             local rootPart = player.Character.HumanoidRootPart
-            local distance = (rootPart.Position - myRoot.Position).Magnitude
+            local distance = (rootPart.Position - Mouse.Hit.p).Magnitude
             
             if distance < closestDistance then
                 closestDistance = distance
@@ -43,85 +53,125 @@ function findClosestPlayer()
     return closestPlayer
 end
 
--- Aim at target
-function aimAtTarget()
-    if not aimlockEnabled or not aimlockTarget or not aimlockTarget.Character then return end
-    
-    local targetRoot = aimlockTarget.Character:FindFirstChild("HumanoidRootPart")
-    local targetHead = aimlockTarget.Character:FindFirstChild("Head")
-    
-    if not targetRoot and not targetHead then return end
-    
-    -- Aim at head if available, otherwise root
-    local aimPart = targetHead or targetRoot
-    if not aimPart then return end
-    
-    -- Calculate aim direction
-    local aimCFrame = CFrame.new(Camera.CFrame.Position, aimPart.Position)
-    
-    -- Smooth aim with tween
-    local tweenInfo = TweenInfo.new(aimSpeed, Enum.EasingStyle.Linear, Enum.EasingDirection.Out)
-    local tween = TweenService:Create(Camera, tweenInfo, {CFrame = aimCFrame})
-    tween:Play()
-end
-
--- Update loop
-function updateAimbot()
-    RunService.RenderStepped:Connect(function()
-        if aimlockEnabled then
-            -- Find closest player
-            local closest = findClosestPlayer()
-            
-            if closest ~= aimlockTarget then
-                aimlockTarget = closest
-                
-                if closest then
-                    game.StarterGui:SetCore("SendNotification", {
-                        Title = "Aimbot Target",
-                        Text = closest.Name,
-                        Duration = 1
-                    })
+-- Apply highlight to player
+function highlightPlayer(player)
+    if highlightedPlayer then
+        -- Remove previous highlight
+        if highlightedPlayer.Character then
+            for _, obj in ipairs(highlightedPlayer.Character:GetDescendants()) do
+                if obj.Name == "HighlightEffect" then
+                    obj:Destroy()
                 end
             end
-            
-            -- Keep aiming at target
-            if aimlockTarget then
-                aimAtTarget()
+        end
+    end
+    
+    highlightedPlayer = player
+    
+    if player and player.Character then
+        -- Create highlight effect
+        local highlight = Instance.new("Highlight")
+        highlight.Name = "HighlightEffect"
+        highlight.FillColor = Color3.fromRGB(0, 150, 255)
+        highlight.OutlineColor = Color3.fromRGB(255, 255, 255)
+        highlight.FillTransparency = 0.5
+        highlight.OutlineTransparency = 0
+        highlight.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
+        highlight.Adornee = player.Character
+        highlight.Parent = player.Character
+        
+        -- Visual feedback notification
+        game.StarterGui:SetCore("SendNotification", {
+            Title = "Player Detected",
+            Text = player.Name,
+            Duration = 2
+        })
+    end
+end
+
+-- Teleport around player
+function teleportAroundPlayer()
+    if not highlightedPlayer or not highlightedPlayer.Character then return end
+    
+    local rootPart = highlightedPlayer.Character.HumanoidRootPart
+    local playerRoot = LocalPlayer.Character and LocalPlayer.Character.HumanoidRootPart
+    
+    if not playerRoot then return end
+    
+    -- Calculate teleport positions (5 stud radius in front and to the side)
+    local positions = {
+        rootPart.CFrame * CFrame.new(0, 0, -5),  -- Front
+        rootPart.CFrame * CFrame.new(-5, 0, 0),  -- Left
+        rootPart.CFrame * CFrame.new(5, 0, 0),   -- Right
+        rootPart.CFrame * CFrame.new(0, 0, 5),   -- Back
+        rootPart.CFrame * CFrame.new(-3, 0, -3), -- Front-left
+        rootPart.CFrame * CFrame.new(3, 0, -3),  -- Front-right
+    }
+    
+    -- Cycle through positions
+    local currentIndex = 0
+    local function cycleTeleport()
+        currentIndex = (currentIndex % #positions) + 1
+        playerRoot.CFrame = positions[currentIndex]
+    end
+    
+    cycleTeleport()
+    
+    -- Visual feedback
+    game.StarterGui:SetCore("SendNotification", {
+        Title = "Teleported",
+        Text = "Position updated",
+        Duration = 1
+    })
+end
+
+-- Update detection loop
+function startDetection()
+    createHighlightUI()
+    
+    RunService.RenderStepped:Connect(function()
+        if scriptEnabled then
+            local closest = findClosestPlayerToMouse()
+            if closest ~= highlightedPlayer then
+                highlightPlayer(closest)
             end
-        else
-            aimlockTarget = nil
         end
     end)
 end
 
--- Toggle with Q
+-- Toggle script with Q
 UserInputService.InputBegan:Connect(function(input)
     if input.UserInputType == Enum.UserInputType.Keyboard then
         if input.KeyCode == Enum.KeyCode.Q then
-            aimlockEnabled = not aimlockEnabled
+            scriptEnabled = not scriptEnabled
             
-            if aimlockEnabled then
+            if scriptEnabled then
                 game.StarterGui:SetCore("SendNotification", {
-                    Title = "Aimbot Enabled",
+                    Title = "Script Enabled",
                     Text = "Press Q to disable",
                     Duration = 2
                 })
-                updateAimbot()
+                startDetection()
             else
                 game.StarterGui:SetCore("SendNotification", {
-                    Title = "Aimbot Disabled",
+                    Title = "Script Disabled",
                     Text = "Press Q to enable",
                     Duration = 2
                 })
-                aimlockTarget = nil
+                highlightPlayer(nil)
             end
+        end
+        
+        -- Teleport with E
+        if scriptEnabled and input.KeyCode == Enum.KeyCode.E then
+            teleportAroundPlayer()
         end
     end
 end)
 
 -- Initial notification
 game.StarterGui:SetCore("SendNotification", {
-    Title = "Aimbot Loaded",
-    Text = "Press Q to toggle",
+    Title = "Player Tracker Loaded",
+    Text = "Press Q to toggle, E to teleport",
     Duration = 5
 })
