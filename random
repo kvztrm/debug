@@ -1,4 +1,4 @@
--- Team-based Aimbot with auto-switch
+-- Aimbot - Lock to closest player to mouse
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
@@ -9,40 +9,17 @@ local Mouse = LocalPlayer:GetMouse()
 local enabled = false
 local target = nil
 
-function getTeam()
-    local char = LocalPlayer.Character
-    if char then
-        local team = char:FindFirstChild("Team")
-        if team then return team.Value end
-    end
-    return nil
-end
-
-function isEnemy(player)
-    local myTeam = getTeam()
-    if not myTeam then return true end -- No team means everyone is enemy
-    
-    local enemyTeam = player.Character and player.Character:FindFirstChild("Team")
-    if enemyTeam then
-        return enemyTeam.Value ~= myTeam
-    end
-    return true
-end
-
-function findClosestEnemy()
-    local closest, dist = nil, 5000
-    local myRoot = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
-    if myRoot then
-        for _, p in ipairs(Players:GetPlayers()) do
-            if p ~= LocalPlayer and isEnemy(p) and p.Character then
-                local root = p.Character:FindFirstChild("HumanoidRootPart")
-                local head = p.Character:FindFirstChild("Head")
-                if root and head then
-                    local d = (root.Position - myRoot.Position).Magnitude
-                    if d < dist then
-                        dist = d
-                        closest = p
-                    end
+function findClosestToMouse()
+    local closest, closestDist = nil, 1000
+    for _, p in ipairs(Players:GetPlayers()) do
+        if p ~= LocalPlayer and p.Character then
+            local root = p.Character:FindFirstChild("HumanoidRootPart")
+            local head = p.Character:FindFirstChild("Head")
+            if root and head then
+                local dist = (root.Position - Mouse.Hit.p).Magnitude
+                if dist < closestDist then
+                    closestDist = dist
+                    closest = p
                 end
             end
         end
@@ -64,11 +41,11 @@ UserInputService.InputBegan:Connect(function(input)
         enabled = not enabled
         
         if enabled then
-            target = findClosestEnemy()
+            target = findClosestToMouse()
             if target then
                 for i = 1, 10 do
                     aimAtPlayer(target)
-                    game.RunService.Heartbeat:Wait()
+                    task.wait(0.001)
                 end
             else
                 enabled = false
@@ -81,17 +58,8 @@ end)
 
 RunService.RenderStepped:Connect(function()
     if enabled then
-        -- Check if target is dead
-        if target and target.Character then
-            local humanoid = target.Character:FindFirstChild("Humanoid")
-            if humanoid and humanoid.Health <= 0 then
-                target = findClosestEnemy()
-            end
-        else
-            target = findClosestEnemy()
-        end
-        
-        -- Continue aiming
+        -- Find closest to mouse
+        target = findClosestToMouse()
         if target then
             aimAtPlayer(target)
         end
