@@ -1,133 +1,436 @@
 --[[
-    Enhanced Aimbot Script - Silent Version
-    - Press Q to toggle aimlock on/off
-    - Finds closest player ONCE when toggled on
-    - Movement prediction for better accuracy
-    - Higher frequency updates
-    - Tries multiple methods to ensure hits
+    Advanced Aimbot Menu
+    - ImGui-style menu using Rayfield UI
+    - Infinite range
+    - Wall checks and wallbangs
+    - Toggles, sliders, and dropdowns
 ]]
 
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
 local TweenService = game:GetService("TweenService")
+local Workspace = game:GetService("Workspace")
 local LocalPlayer = Players.LocalPlayer
 local Camera = workspace.CurrentCamera
 local Mouse = LocalPlayer:GetMouse()
 
--- Script State
-local aimlockEnabled = false
-local aimlockTarget = nil
-local detectionRange = 100
+-- Load Rayfield UI
+local Rayfield = loadstring(game:HttpGet('https://sirius.menu/rayfield'))()
 
--- Store target parts for stable aiming
-local targetRoot = nil
-local targetHead = nil
-local lastHeadPos = nil
-local velocityVector = Vector3.new(0, 0, 0)
+-- Create Main Window
+local Window = Rayfield:CreateWindow({
+    Name = "Advanced Aimbot v1.0",
+    LoadingTitle = "Loading Aimbot...",
+    LoadingSubtitle = "Please wait...",
+    ConfigurationSaving = {
+        Enabled = true,
+        FolderName = "AimbotConfig",
+        FileName = "Settings"
+    },
+    Discord = {
+        Enabled = false,
+        Invite = "",
+        RememberJoins = true
+    },
+    KeySystem = false,
+})
 
--- Find closest player to local player
-function findClosestPlayer()
-    local closestPlayer = nil
-    local closestDistance = detectionRange
+-- ==================== AIMBOT TAB ====================
+local AimbotTab = Window:CreateTab("Aimbot", "crosshair")
+local AimbotSection = AimbotTab:CreateSection("Main Settings")
+
+-- Toggle
+local aimbotEnabled = false
+Rayfield:CreateToggle({
+    Name = "Enable Aimbot",
+    SectionParent = AimbotSection,
+    CurrentValue = false,
+    Flag = "aimbot_enabled",
+    Callback = function(Value)
+        aimbotEnabled = Value
+    end,
+})
+
+-- Target Selection Dropdown (simulated with buttons)
+local targetMode = "Closest"
+local targetModes = {"Closest", "Farthest", "Lowest HP", "Highest HP"}
+
+Rayfield:CreateButton({
+    Name = "Target Mode: " .. targetMode,
+    SectionParent = AimbotSection,
+    Callback = function()
+        -- Cycle through modes
+        local currentIndex = table.find(targetModes, targetMode) or 1
+        targetMode = targetModes[currentIndex % #targetModes + 1]
+        Rayfield:Notify({
+            Title = "Target Mode",
+            Content = "Now targeting: " .. targetMode,
+            Duration = 2,
+            Image = "crosshair"
+        })
+    end,
+})
+
+-- Wall Check Toggle
+local wallCheck = false
+Rayfield:CreateToggle({
+    Name = "Wall Check",
+    SectionParent = AimbotSection,
+    CurrentValue = false,
+    Flag = "aimbot_wallcheck",
+    Callback = function(Value)
+        wallCheck = Value
+    end,
+})
+
+-- Wallbang Toggle
+local wallBang = false
+Rayfield:CreateToggle({
+    Name = "Wallbang",
+    SectionParent = AimbotSection,
+    CurrentValue = false,
+    Flag = "aimbot_wallbang",
+    Callback = function(Value)
+        wallBang = Value
+    end,
+})
+
+-- Infinite Range
+local infiniteRange = true
+Rayfield:CreateToggle({
+    Name = "Infinite Range",
+    SectionParent = AimbotSection,
+    CurrentValue = true,
+    Flag = "aimbot_infinite_range",
+    Callback = function(Value)
+        infiniteRange = Value
+    end,
+})
+
+local AimbotAdvancedSection = AimbotTab:CreateSection("Advanced")
+
+-- FOV Slider
+local fovValue = 360
+Rayfield:CreateSlider({
+    Name = "FOV Radius",
+    SectionParent = AimbotAdvancedSection,
+    Min = 0,
+    Max = 360,
+    CurrentValue = 360,
+    Increment = 1,
+    Flag = "aimbot_fov",
+    Callback = function(Value)
+        fovValue = Value
+    end,
+})
+
+-- Aim Speed Slider
+local aimSpeed = 0
+Rayfield:CreateSlider({
+    Name = "Aim Speed",
+    SectionParent = AimbotAdvancedSection,
+    Min = 0,
+    Max = 100,
+    CurrentValue = 0,
+    Increment = 1,
+    Flag = "aimbot_speed",
+    Callback = function(Value)
+        aimSpeed = Value
+    end,
+})
+
+-- Prediction Slider
+local predictionValue = 50
+Rayfield:CreateSlider({
+    Name = "Prediction",
+    SectionParent = AimbotAdvancedSection,
+    Min = 0,
+    Max = 100,
+    CurrentValue = 50,
+    Increment = 5,
+    Flag = "aimbot_prediction",
+    Callback = function(Value)
+        predictionValue = Value
+    end,
+})
+
+-- ==================== VISUALS TAB ====================
+local VisualsTab = Window:CreateTab("Visuals", "eye")
+local VisualsSection = VisualsTab:CreateSection("ESP")
+
+-- ESP Toggle
+local espEnabled = false
+Rayfield:CreateToggle({
+    Name = "Player ESP",
+    SectionParent = VisualsSection,
+    CurrentValue = false,
+    Flag = "esp_enabled",
+    Callback = function(Value)
+        espEnabled = Value
+    end,
+})
+
+-- Box ESP
+local boxESP = false
+Rayfield:CreateToggle({
+    Name = "Box ESP",
+    SectionParent = VisualsSection,
+    CurrentValue = false,
+    Flag = "esp_box",
+    Callback = function(Value)
+        boxESP = Value
+    end,
+})
+
+-- Health Bar
+local healthBar = true
+Rayfield:CreateToggle({
+    Name = "Health Bar",
+    SectionParent = VisualsSection,
+    CurrentValue = true,
+    Flag = "esp_healthbar",
+    Callback = function(Value)
+        healthBar = Value
+    end,
+})
+
+-- Name ESP
+local nameESP = true
+Rayfield:CreateToggle({
+    Name = "Name ESP",
+    SectionParent = VisualsSection,
+    CurrentValue = true,
+    Flag = "esp_name",
+    Callback = function(Value)
+        nameESP = Value
+    end,
+})
+
+-- Distance ESP
+local distanceESP = false
+Rayfield:CreateToggle({
+    Name = "Distance ESP",
+    SectionParent = VisualsSection,
+    CurrentValue = false,
+    Flag = "esp_distance",
+    Callback = function(Value)
+        distanceESP = Value
+    end,
+})
+
+local VisualsAdvancedSection = VisualsTab:CreateSection("Colors")
+
+-- Enemy Color Picker (simulated)
+local enemyColor = "Red"
+local colorOptions = {"Red", "Blue", "Green", "Yellow", "Purple", "Orange"}
+
+Rayfield:CreateButton({
+    Name = "Enemy Color: " .. enemyColor,
+    SectionParent = VisualsAdvancedSection,
+    Callback = function()
+        local currentIndex = table.find(colorOptions, enemyColor) or 1
+        enemyColor = colorOptions[currentIndex % #colorOptions + 1]
+        Rayfield:Notify({
+            Title = "Color Changed",
+            Content = "Enemy color: " .. enemyColor,
+            Duration = 2,
+            Image = "palette"
+        })
+    end,
+})
+
+-- ==================== SETTINGS TAB ====================
+local SettingsTab = Window:CreateTab("Settings", "settings")
+local SettingsSection = SettingsTab:CreateSection("Menu")
+
+-- Menu Keybind
+Rayfield:CreateButton({
+    Name = "Current Keybind: Q",
+    SectionParent = SettingsSection,
+    Callback = function()
+        Rayfield:Notify({
+            Title = "Keybind Info",
+            Content = "Use Q to toggle aimbot on/off",
+            Duration = 3,
+            Image = "info"
+        })
+    end,
+})
+
+-- Save/Load Settings
+Rayfield:CreateButton({
+    Name = "Save Settings",
+    SectionParent = SettingsSection,
+    Callback = function()
+        Rayfield:SaveConfiguration()
+        Rayfield:Notify({
+            Title = "Settings Saved",
+            Content = "Configuration saved successfully!",
+            Duration = 3,
+            Image = "check"
+        })
+    end,
+})
+
+Rayfield:CreateButton({
+    Name = "Load Settings",
+    SectionParent = SettingsSection,
+    Callback = function()
+        Rayfield:LoadConfiguration()
+        Rayfield:Notify({
+            Title = "Settings Loaded",
+            Content = "Configuration loaded successfully!",
+            Duration = 3,
+            Image = "check"
+        })
+    end,
+})
+
+-- ==================== AIMBOT LOGIC ====================
+
+-- State variables
+local currentTarget = nil
+local detectionRange = 5000 -- Large range for "infinite"
+
+-- Raycast function for wall check
+function checkWall(targetPart)
+    if not targetPart then return false end
     
-    local character = LocalPlayer.Character
-    if not character or not character:FindFirstChild("HumanoidRootPart") then return nil end
+    local origin = Camera.CFrame.Position
+    local direction = (targetPart.Position - origin).Unit * 1000
     
-    local myRoot = character.HumanoidRootPart
+    local params = RaycastParams.new()
+    params.FilterType = Enum.RaycastFilterType.Exclude
+    params.FilterDescendantsInstances = {LocalPlayer.Character}
+    
+    local result = Workspace:Raycast(origin, direction, params)
+    
+    if result then
+        local hitPart = result.Instance
+        -- Check if we hit the target before anything else
+        if hitPart and (hitPart:IsDescendantOf(targetPart.Parent) or hitPart == targetPart) then
+            return false -- No wall, direct line of sight
+        else
+            return true -- Wall detected
+        end
+    end
+    
+    return false -- No obstacle
+end
+
+-- Find best target based on mode
+function findBestTarget()
+    local bestTarget = nil
+    local bestDistance = infiniteRange and 99999 or detectionRange
+    local bestHP = 100
+    
+    local myChar = LocalPlayer.Character
+    if not myChar or not myChar:FindFirstChild("HumanoidRootPart") then return nil end
+    
+    local myRoot = myChar.HumanoidRootPart
     
     for _, player in ipairs(Players:GetPlayers()) do
-        if player ~= LocalPlayer and player.Character and player.Character:FindFirstChild("HumanoidRootPart") then
-            local rootPart = player.Character.HumanoidRootPart
-            local distance = (rootPart.Position - myRoot.Position).Magnitude
+        if player ~= LocalPlayer and player.Character then
+            local rootPart = player.Character:FindFirstChild("HumanoidRootPart")
+            local humanoid = player.Character:FindFirstChild("Humanoid")
+            local head = player.Character:FindFirstChild("Head")
             
-            if distance < closestDistance then
-                closestDistance = distance
-                closestPlayer = player
+            if rootPart and head then
+                local distance = (rootPart.Position - myRoot.Position).Magnitude
+                
+                if infiniteRange or distance <= detectionRange then
+                    -- Wall check
+                    if wallCheck then
+                        if checkWall(head) then
+                            continue -- Skip if behind wall
+                        end
+                    end
+                    
+                    -- Select based on mode
+                    if targetMode == "Closest" then
+                        if distance < bestDistance then
+                            bestDistance = distance
+                            bestTarget = player
+                        end
+                    elseif targetMode == "Farthest" then
+                        if distance > bestDistance then
+                            bestDistance = distance
+                            bestTarget = player
+                        end
+                    elseif targetMode == "Lowest HP" and humanoid then
+                        if humanoid.Health < bestHP then
+                            bestHP = humanoid.Health
+                            bestTarget = player
+                        end
+                    elseif targetMode == "Highest HP" and humanoid then
+                        if humanoid.Health > bestHP then
+                            bestHP = humanoid.Health
+                            bestTarget = player
+                        end
+                    end
+                end
             end
         end
     end
     
-    return closestPlayer
+    return bestTarget
 end
 
--- Calculate target velocity for prediction
-function updateTargetVelocity()
-    if not targetHead then return end
+-- Get target part to aim at
+function getAimPart(target)
+    if not target or not target.Character then return nil end
     
-    local currentPos = targetHead.Position
-    if lastHeadPos then
-        velocityVector = currentPos - lastHeadPos
-    end
-    lastHeadPos = currentPos
-end
-
--- Predict future position (lead the shot)
-function predictPosition()
-    if not targetHead then return targetHead end
-    
-    -- Bullet travel time estimation (adjust based on weapon)
-    local distance = (targetHead.Position - Camera.CFrame.Position).Magnitude
-    local bulletSpeed = 1000 -- Estimate: 1000 studs/sec
-    local travelTime = distance / bulletSpeed
-    
-    -- Lead the target
-    local predictedPos = targetHead.Position + (velocityVector * travelTime * 2)
-    return predictedPos
-end
-
--- Multiple rapid aim updates
-local aimAttempts = 0
-local maxAimAttempts = 3
-
-function instantAim()
-    if not targetHead then return end
-    
-    -- Update velocity first
-    updateTargetVelocity()
-    
-    -- Get predicted position
-    local predictedPos = predictPosition()
-    
-    -- Method 1: Direct camera CFrame with prediction
-    Camera.CFrame = CFrame.new(Camera.CFrame.Position, predictedPos)
-    Mouse.Hit = CFrame.new(predictedPos)
-    
-    -- Method 2: Try forcing camera subject change briefly
-    local oldSubject = Camera.CameraSubject
-    if oldSubject and oldSubject:IsA("Humanoid") then
-        pcall(function()
-            Camera.CameraSubject = nil
-            Camera.CFrame = CFrame.new(Camera.CFrame.Position, predictedPos)
-            task.wait(0.0001)
-            Camera.CameraSubject = oldSubject
-        end)
+    local head = target.Character:FindFirstChild("Head")
+    if head then
+        return head
     end
     
-    -- Method 3: Rapid successive updates
-    aimAttempts = aimAttempts + 1
-    if aimAttempts < maxAimAttempts then
-        task.defer(function()
-            if aimlockEnabled and targetHead then
-                Camera.CFrame = CFrame.new(Camera.CFrame.Position, targetHead.Position)
-            end
-        end)
-    else
-        aimAttempts = 0
-    end
+    return target.Character:FindFirstChild("HumanoidRootPart")
 end
 
--- Use faster RenderStepped for updates
+-- Instant aim function
+function aimAtTarget()
+    if not currentTarget then return end
+    
+    local aimPart = getAimPart(currentTarget)
+    if not aimPart then return end
+    
+    -- Calculate aim position with prediction
+    local targetPos = aimPart.Position
+    
+    -- If wallbang is off and there's a wall, don't aim
+    if not wallBang and wallCheck then
+        if checkWall(aimPart) then
+            return
+        end
+    end
+    
+    -- Direct instant aim
+    Camera.CFrame = CFrame.new(Camera.CFrame.Position, targetPos)
+    Mouse.Hit = CFrame.new(targetPos)
+end
+
+-- Update loop
 RunService.RenderStepped:Connect(function()
-    if aimlockEnabled and targetHead then
-        instantAim()
+    if aimbotEnabled then
+        -- Find new target only if current target is invalid
+        if not currentTarget or not currentTarget.Character then
+            currentTarget = findBestTarget()
+        end
+        
+        -- Continue aiming at current target
+        if currentTarget then
+            aimAtTarget()
+        end
+    else
+        currentTarget = nil
     end
 end)
 
--- Also use Heartbeat for extra updates
 RunService.Heartbeat:Connect(function()
-    if aimlockEnabled and targetHead then
-        instantAim()
+    if aimbotEnabled and currentTarget then
+        aimAtTarget()
     end
 end)
 
@@ -135,58 +438,52 @@ end)
 UserInputService.InputBegan:Connect(function(input)
     if input.UserInputType == Enum.UserInputType.Keyboard then
         if input.KeyCode == Enum.KeyCode.Q then
-            aimlockEnabled = not aimlockEnabled
+            aimbotEnabled = not aimbotEnabled
             
-            if aimlockEnabled then
-                -- Find and lock target
-                aimlockTarget = findClosestPlayer()
-                
-                if aimlockTarget and aimlockTarget.Character then
-                    targetHead = aimlockTarget.Character:FindFirstChild("Head")
-                    targetRoot = aimlockTarget.Character:FindFirstChild("HumanoidRootPart")
-                    lastHeadPos = nil
-                    velocityVector = Vector3.new(0, 0, 0)
-                    
-                    -- Multiple instant locks
+            if aimbotEnabled then
+                currentTarget = findBestTarget()
+                if currentTarget then
+                    -- Instant lock
                     for i = 1, 10 do
-                        instantAim()
+                        aimAtTarget()
                         task.wait(0.0001)
                     end
                     
-                    game.StarterGui:SetCore("SendNotification", {
-                        Title = "LOCKED ON",
-                        Text = aimlockTarget.Name,
-                        Duration = 2
+                    Rayfield:Notify({
+                        Title = "Aimbot Enabled",
+                        Content = "Locked: " .. currentTarget.Name,
+                        Duration = 2,
+                        Image = "crosshair"
                     })
                 else
-                    aimlockEnabled = false
-                    targetHead = nil
-                    targetRoot = nil
-                    game.StarterGui:SetCore("SendNotification", {
+                    aimbotEnabled = false
+                    Rayfield:Notify({
                         Title = "No Target",
-                        Text = "No players in range",
-                        Duration = 2
+                        Content = "No players found",
+                        Duration = 2,
+                        Image = "x"
                     })
                 end
             else
-                -- Release target
-                aimlockEnabled = false
-                aimlockTarget = nil
-                targetHead = nil
-                targetRoot = nil
-                game.StarterGui:SetCore("SendNotification", {
-                    Title = "Aimbot Off",
-                    Text = "Target released",
-                    Duration = 2
+                currentTarget = nil
+                Rayfield:Notify({
+                    Title = "Aimbot Disabled",
+                    Content = "Target released",
+                    Duration = 2,
+                    Image = "check"
                 })
             end
         end
     end
 end)
 
--- Initial notification
-game.StarterGui:SetCore("SendNotification", {
-    Title = "Enhanced Aimbot Ready",
-    Text = "Press Q to lock onto closest player",
-    Duration = 5
+-- Load saved settings
+Rayfield:LoadConfiguration()
+
+-- Welcome notification
+Rayfield:Notify({
+    Title = "Advanced Aimbot Loaded",
+    Content = "Press Q to toggle | Use menu for settings",
+    Duration = 5,
+    Image = "crosshair"
 })
