@@ -1,16 +1,18 @@
 --[[
-    Instant Aimbot Script
+    Instant Aimbot Script (Aggressive Version)
     - Press Q to toggle aimlock on/off
     - Instantly locks onto closest player's head
-    - Stays locked until toggle is pressed
+    - Uses multiple methods for instant lock
 ]]
 
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
+local ContextActionService = game:GetService("ContextActionService")
 
 local LocalPlayer = Players.LocalPlayer
 local Camera = workspace.CurrentCamera
+local Mouse = LocalPlayer:GetMouse()
 
 -- Script State
 local aimlockEnabled = false
@@ -42,26 +44,37 @@ function findClosestPlayer()
     return closestPlayer
 end
 
--- Instant aim function
+-- Instant aim function - multiple methods
 function instantAim()
     if not aimlockTarget or not aimlockTarget.Character then return end
     
     local targetHead = aimlockTarget.Character:FindFirstChild("Head")
     if not targetHead then
-        -- Fallback to humanoid root part
         targetHead = aimlockTarget.Character:FindFirstChild("HumanoidRootPart")
     end
     
     if not targetHead then return end
     
-    -- Instant lock to head position
+    -- Method 1: Direct CFrame set
     Camera.CFrame = CFrame.new(Camera.CFrame.Position, targetHead.Position)
+    
+    -- Method 2: Update mouse hit to force aim direction
+    Mouse.Hit = CFrame.new(targetHead.Position)
+    
+    -- Method 3: Unbind camera temporarily
+    local oldSubject = Camera.CameraSubject
+    Camera.CameraSubject = nil
+    Camera.CFrame = CFrame.new(Camera.CFrame.Position, targetHead.Position)
+    task.wait(0.01)
+    Camera.CameraSubject = oldSubject
 end
 
--- Update loop
-RunService.RenderStepped:Connect(function()
+-- Fast update loop
+local heartbeatConnection
+heartbeatConnection = RunService.Heartbeat:Connect(function()
     if aimlockEnabled and aimlockTarget then
         instantAim()
+        instantAim() -- Double call for extra certainty
     end
 end)
 
@@ -72,11 +85,14 @@ UserInputService.InputBegan:Connect(function(input)
             aimlockEnabled = not aimlockEnabled
             
             if aimlockEnabled then
-                -- Find and lock to closest player immediately
                 aimlockTarget = findClosestPlayer()
                 
                 if aimlockTarget then
-                    instantAim() -- Instant lock on toggle
+                    -- Multiple instant aims for guaranteed lock
+                    for i = 1, 5 do
+                        instantAim()
+                        task.wait(0.001)
+                    end
                     
                     game.StarterGui:SetCore("SendNotification", {
                         Title = "Aimbot Locked",
@@ -84,16 +100,15 @@ UserInputService.InputBegan:Connect(function(input)
                         Duration = 2
                     })
                 else
+                    aimlockEnabled = false
                     game.StarterGui:SetCore("SendNotification", {
-                        Title = "No Target Found",
+                        Title = "No Target",
                         Text = "No players in range",
                         Duration = 2
                     })
-                    aimlockEnabled = false
                 end
             else
                 aimlockTarget = nil
-                
                 game.StarterGui:SetCore("SendNotification", {
                     Title = "Aimbot Disabled",
                     Text = "Press Q to enable",
@@ -106,7 +121,7 @@ end)
 
 -- Initial notification
 game.StarterGui:SetCore("SendNotification", {
-    Title = "Instant Aimbot Loaded",
+    Title = "Aimbot Loaded",
     Text = "Press Q to toggle",
     Duration = 5
 })
