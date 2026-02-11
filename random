@@ -1,4 +1,4 @@
--- Aimbot - Lock to closest player to mouse
+-- Aimbot - Lock to player closest to camera look direction
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
@@ -9,21 +9,30 @@ local Mouse = LocalPlayer:GetMouse()
 local enabled = false
 local target = nil
 
-function findClosestToMouse()
-    local closest, closestDist = nil, 1000
+function findClosestToCamera()
+    local closest, closestAngle = nil, 360
+    local camPos = Camera.CFrame.Position
+    local camLook = Camera.CFrame.LookVector
+    
     for _, p in ipairs(Players:GetPlayers()) do
         if p ~= LocalPlayer and p.Character then
             local root = p.Character:FindFirstChild("HumanoidRootPart")
             local head = p.Character:FindFirstChild("Head")
             if root and head then
-                local dist = (root.Position - Mouse.Hit.p).Magnitude
-                if dist < closestDist then
-                    closestDist = dist
+                local partPos = head.Position
+                local toPlayer = (partPos - camPos).Unit
+                
+                -- Calculate angle between camera look and player direction
+                local angle = math.deg(math.acos(camLook:Dot(toPlayer)))
+                
+                if angle < closestAngle then
+                    closestAngle = angle
                     closest = p
                 end
             end
         end
     end
+    
     return closest
 end
 
@@ -41,7 +50,7 @@ UserInputService.InputBegan:Connect(function(input)
         enabled = not enabled
         
         if enabled then
-            target = findClosestToMouse()
+            target = findClosestToCamera()
             if target then
                 for i = 1, 10 do
                     aimAtPlayer(target)
@@ -58,8 +67,7 @@ end)
 
 RunService.RenderStepped:Connect(function()
     if enabled then
-        -- Find closest to mouse
-        target = findClosestToMouse()
+        target = findClosestToCamera()
         if target then
             aimAtPlayer(target)
         end
