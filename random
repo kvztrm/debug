@@ -1,75 +1,137 @@
--- Aimbot - Lock to player closest to camera look direction
+-- External-style Aimbot
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
+local TweenService = game:GetService("TweenService")
 local LocalPlayer = Players.LocalPlayer
 local Camera = workspace.CurrentCamera
 local Mouse = LocalPlayer:GetMouse()
 
-local enabled = false
-local target = nil
+-- Aimbot Settings
+local settings = {
+    enabled = false,
+    fov = 100,
+    smoothing = 5,
+    aimKey = Enum.KeyCode.Q,
+    aimPart = "Head",
+    silentAim = false
+}
 
-function findClosestToCamera()
-    local closest, closestAngle = nil, 360
-    local camPos = Camera.CFrame.Position
-    local camLook = Camera.CFrame.LookVector
+local currentTarget = nil
+local fovCircle = nil
+
+function createFOVCircle()
+    if fovCircle then fovCircle:Destroy() end
+    fovCircle = Drawing.new("Circle")
+    fovCircle.Thickness = 2
+    fovCircle.NumSides = 64
+    fovCircle.Filled = false
+    fovCircle.Visible = settings.enabled
+    fovCircle.Color = Color3.fromRGB(0, 255, 0)
+end
+
+createFOVCircle()
+
+function getScreenSize()
+    return workspace.CurrentCamera.ViewportSize
+end
+
+function worldToScreen(worldPoint)
+    local screenPos, onScreen = Camera:WorldToViewportPoint(worldPoint)
+    return Vector2.new(screenPos.X, screenPos.Y), onScreen
+end
+
+function findTarget()
+    local screenCenter = getScreenSize() / 2
+    local closestPlayer = nil
+    local closestDistance = settings.fov
+    local closestAngle = 360
     
     for _, p in ipairs(Players:GetPlayers()) do
         if p ~= LocalPlayer and p.Character then
-            local root = p.Character:FindFirstChild("HumanoidRootPart")
-            local head = p.Character:FindFirstChild("Head")
-            if root and head then
-                local partPos = head.Position
-                local toPlayer = (partPos - camPos).Unit
-                
-                -- Calculate angle between camera look and player direction
-                local angle = math.deg(math.acos(camLook:Dot(toPlayer)))
-                
-                if angle < closestAngle then
-                    closestAngle = angle
-                    closest = p
+            local part = p.Character:FindFirstChild(settings.aimPart) or p.Character:FindFirstChild("HumanoidRootPart")
+            if part then
+                local screenPos, onScreen = worldToScreen(part.Position)
+                if onScreen then
+                    local distToCenter = (screenPos - screenCenter).Magnitude
+                    local camPos = Camera.CFrame.Position
+                    local camLook = Camera.CFrame.LookVector
+                    local toPlayer = (part.Position - camPos).Unit
+                    local angle = math.deg(math.acos(camLook:Dot(toPlayer)))
+                    
+                    if distToCenter < closestDistance or angle < closestAngle then
+                        closestDistance = distToCenter
+                        closestAngle = angle
+                        closestPlayer = p
+                    end
                 end
             end
+        end
+    end
+    return closestPlayer
+end
+
+function aimAt(target)
+    if not target or not target.Character then return end
+    local part = target.Character:FindFirstChild(settings.aimPart) or target.Character:FindFirstChild("HumanoidRootPart")
+    if not part then return end
+    local targetPos = part.Position
+    
+    if settings.silentAim then
+        Mouse.Hit = CFrame.new(targetPos)
+        return
+    end
+    
+    local currentCFrame = Camera.CFrame
+    local targetCFrame = CFrame.new(currentCFrame.Position, targetPos)
+    local tweenInfo = TweenInfo.new(0.05 / settings.smoothing, Enum.EasingStyle.Linear, Enum.EasingDirection.Out)
+    TweenService:Create(Camera, tweenInfo, {CFrame = targetCFrame}):Play()
+    Mouse.Hit = CFrame.new(targetPos)
+end
+
+RunService.RenderStepped:Connect(function()
+    if settings.enabled and fovCircle then
+        local screenCenter = getScreenSize() / 2
+        fovCircle.Position = screenCenter
+        fovCircle.Radius = settings.fov
+        fovCircle.Visible = true
+    elseif fovCircle then
+        fovCircle.Visible = false
+    end
+    
+    if settings.enabled then
+        currentTarget = findTarget()
+        if currentTarget then
+            aimAt(currentTarget)
+        end
+    end
+end)
+
+UserInputService.InputBegan:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.Keyboard and input.KeyCode == settings.aimKey then
+        settings.enabled = not settings.enabled
+        if settings.enabled then
+            currentTarget = findTarget()
+            if currentTarget then aimAt(currentTarget) end
+        else
+            currentTarget = nil
         end
     end
     
-    return closest
-end
-
-function aimAtPlayer(player)
-    if not player or not player.Character then return end
-    local part = player.Character:FindFirstChild("Head") or player.Character:FindFirstChild("HumanoidRootPart")
-    if part then
-        Camera.CFrame = CFrame.new(Camera.CFrame.Position, part.Position)
-        Mouse.Hit = CFrame.new(part.Position)
+    if input.KeyCode == Enum.KeyCode.E and settings.enabled then
+        settings.aimPart = settings.aimPart == "Head" and "HumanoidRootPart" or "Head"
     end
-end
-
-UserInputService.InputBegan:Connect(function(input)
-    if input.KeyCode == Enum.KeyCode.Q and input.UserInputType == Enum.UserInputType.Keyboard then
-        enabled = not enabled
-        
-        if enabled then
-            target = findClosestToCamera()
-            if target then
-                for i = 1, 10 do
-                    aimAtPlayer(target)
-                    task.wait(0.001)
-                end
-            else
-                enabled = false
-            end
-        else
-            target = nil
-        end
+    
+    if input.KeyCode == Enum.KeyCode.Equals and settings.enabled then
+        settings.fov = math.min(settings.fov + 10, 500)
+    end
+    if input.KeyCode == Enum.KeyCode.Minus and settings.enabled then
+        settings.fov = math.max(settings.fov - 10, 10)
     end
 end)
 
-RunService.RenderStepped:Connect(function()
-    if enabled then
-        target = findClosestToCamera()
-        if target then
-            aimAtPlayer(target)
-        end
-    end
-end)
+game.StarterGui:SetCore("SendNotification", {
+    Title = "Aimbot Loaded",
+    Text = "Q: Toggle | E: Switch Part | +/-: FOV",
+    Duration = 5
+})
