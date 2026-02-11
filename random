@@ -1,24 +1,32 @@
 --[[
-    Lock-on Aimbot Script
+    Enhanced Aimbot Script - Silent Version
     - Press Q to toggle aimlock on/off
     - Finds closest player ONCE when toggled on
-    - Locks onto that specific player forever until toggle
-    - Mouse movement does NOT change target
+    - Movement prediction for better accuracy
+    - Higher frequency updates
+    - Tries multiple methods to ensure hits
 ]]
 
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
+local TweenService = game:GetService("TweenService")
 local LocalPlayer = Players.LocalPlayer
 local Camera = workspace.CurrentCamera
 local Mouse = LocalPlayer:GetMouse()
 
 -- Script State
 local aimlockEnabled = false
-local aimlockTarget = nil -- Set once and NEVER changes
+local aimlockTarget = nil
 local detectionRange = 100
 
--- Find closest player to local player (only called ONCE on toggle)
+-- Store target parts for stable aiming
+local targetRoot = nil
+local targetHead = nil
+local lastHeadPos = nil
+local velocityVector = Vector3.new(0, 0, 0)
+
+-- Find closest player to local player
 function findClosestPlayer()
     local closestPlayer = nil
     local closestDistance = detectionRange
@@ -43,25 +51,82 @@ function findClosestPlayer()
     return closestPlayer
 end
 
--- Instant aim at locked target
-function instantAim()
-    if not aimlockTarget or not aimlockTarget.Character then return end
-    
-    local targetHead = aimlockTarget.Character:FindFirstChild("Head")
-    if not targetHead then
-        targetHead = aimlockTarget.Character:FindFirstChild("HumanoidRootPart")
-    end
-    
+-- Calculate target velocity for prediction
+function updateTargetVelocity()
     if not targetHead then return end
     
-    -- Lock camera directly to target
-    Camera.CFrame = CFrame.new(Camera.CFrame.Position, targetHead.Position)
-    Mouse.Hit = CFrame.new(targetHead.Position)
+    local currentPos = targetHead.Position
+    if lastHeadPos then
+        velocityVector = currentPos - lastHeadPos
+    end
+    lastHeadPos = currentPos
 end
 
--- Fast update loop - only aims at locked target
+-- Predict future position (lead the shot)
+function predictPosition()
+    if not targetHead then return targetHead end
+    
+    -- Bullet travel time estimation (adjust based on weapon)
+    local distance = (targetHead.Position - Camera.CFrame.Position).Magnitude
+    local bulletSpeed = 1000 -- Estimate: 1000 studs/sec
+    local travelTime = distance / bulletSpeed
+    
+    -- Lead the target
+    local predictedPos = targetHead.Position + (velocityVector * travelTime * 2)
+    return predictedPos
+end
+
+-- Multiple rapid aim updates
+local aimAttempts = 0
+local maxAimAttempts = 3
+
+function instantAim()
+    if not targetHead then return end
+    
+    -- Update velocity first
+    updateTargetVelocity()
+    
+    -- Get predicted position
+    local predictedPos = predictPosition()
+    
+    -- Method 1: Direct camera CFrame with prediction
+    Camera.CFrame = CFrame.new(Camera.CFrame.Position, predictedPos)
+    Mouse.Hit = CFrame.new(predictedPos)
+    
+    -- Method 2: Try forcing camera subject change briefly
+    local oldSubject = Camera.CameraSubject
+    if oldSubject and oldSubject:IsA("Humanoid") then
+        pcall(function()
+            Camera.CameraSubject = nil
+            Camera.CFrame = CFrame.new(Camera.CFrame.Position, predictedPos)
+            task.wait(0.0001)
+            Camera.CameraSubject = oldSubject
+        end)
+    end
+    
+    -- Method 3: Rapid successive updates
+    aimAttempts = aimAttempts + 1
+    if aimAttempts < maxAimAttempts then
+        task.defer(function()
+            if aimlockEnabled and targetHead then
+                Camera.CFrame = CFrame.new(Camera.CFrame.Position, targetHead.Position)
+            end
+        end)
+    else
+        aimAttempts = 0
+    end
+end
+
+-- Use faster RenderStepped for updates
+RunService.RenderStepped:Connect(function()
+    if aimlockEnabled and targetHead then
+        instantAim()
+    end
+end)
+
+-- Also use Heartbeat for extra updates
 RunService.Heartbeat:Connect(function()
-    if aimlockEnabled and aimlockTarget then
+    if aimlockEnabled and targetHead then
         instantAim()
     end
 end)
@@ -73,11 +138,21 @@ UserInputService.InputBegan:Connect(function(input)
             aimlockEnabled = not aimlockEnabled
             
             if aimlockEnabled then
-                -- FIND TARGET ONCE AND LOCK IT
+                -- Find and lock target
                 aimlockTarget = findClosestPlayer()
                 
-                if aimlockTarget then
-                    instantAim()
+                if aimlockTarget and aimlockTarget.Character then
+                    targetHead = aimlockTarget.Character:FindFirstChild("Head")
+                    targetRoot = aimlockTarget.Character:FindFirstChild("HumanoidRootPart")
+                    lastHeadPos = nil
+                    velocityVector = Vector3.new(0, 0, 0)
+                    
+                    -- Multiple instant locks
+                    for i = 1, 10 do
+                        instantAim()
+                        task.wait(0.0001)
+                    end
+                    
                     game.StarterGui:SetCore("SendNotification", {
                         Title = "LOCKED ON",
                         Text = aimlockTarget.Name,
@@ -85,6 +160,8 @@ UserInputService.InputBegan:Connect(function(input)
                     })
                 else
                     aimlockEnabled = false
+                    targetHead = nil
+                    targetRoot = nil
                     game.StarterGui:SetCore("SendNotification", {
                         Title = "No Target",
                         Text = "No players in range",
@@ -92,8 +169,11 @@ UserInputService.InputBegan:Connect(function(input)
                     })
                 end
             else
-                -- Release target forever
+                -- Release target
+                aimlockEnabled = false
                 aimlockTarget = nil
+                targetHead = nil
+                targetRoot = nil
                 game.StarterGui:SetCore("SendNotification", {
                     Title = "Aimbot Off",
                     Text = "Target released",
@@ -106,7 +186,7 @@ end)
 
 -- Initial notification
 game.StarterGui:SetCore("SendNotification", {
-    Title = "Aimbot Ready",
+    Title = "Enhanced Aimbot Ready",
     Text = "Press Q to lock onto closest player",
     Duration = 5
 })
