@@ -1,25 +1,24 @@
 --[[
-    Instant Aimbot Script (Aggressive Version)
+    Lock-on Aimbot Script
     - Press Q to toggle aimlock on/off
-    - Instantly locks onto closest player's head
-    - Uses multiple methods for instant lock
+    - Finds closest player ONCE when toggled on
+    - Locks onto that specific player forever until toggle
+    - Mouse movement does NOT change target
 ]]
 
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
-local ContextActionService = game:GetService("ContextActionService")
-
 local LocalPlayer = Players.LocalPlayer
 local Camera = workspace.CurrentCamera
 local Mouse = LocalPlayer:GetMouse()
 
 -- Script State
 local aimlockEnabled = false
-local aimlockTarget = nil
+local aimlockTarget = nil -- Set once and NEVER changes
 local detectionRange = 100
 
--- Find closest player to local player
+-- Find closest player to local player (only called ONCE on toggle)
 function findClosestPlayer()
     local closestPlayer = nil
     local closestDistance = detectionRange
@@ -44,7 +43,7 @@ function findClosestPlayer()
     return closestPlayer
 end
 
--- Instant aim function - multiple methods
+-- Instant aim at locked target
 function instantAim()
     if not aimlockTarget or not aimlockTarget.Character then return end
     
@@ -55,26 +54,15 @@ function instantAim()
     
     if not targetHead then return end
     
-    -- Method 1: Direct CFrame set
+    -- Lock camera directly to target
     Camera.CFrame = CFrame.new(Camera.CFrame.Position, targetHead.Position)
-    
-    -- Method 2: Update mouse hit to force aim direction
     Mouse.Hit = CFrame.new(targetHead.Position)
-    
-    -- Method 3: Unbind camera temporarily
-    local oldSubject = Camera.CameraSubject
-    Camera.CameraSubject = nil
-    Camera.CFrame = CFrame.new(Camera.CFrame.Position, targetHead.Position)
-    task.wait(0.01)
-    Camera.CameraSubject = oldSubject
 end
 
--- Fast update loop
-local heartbeatConnection
-heartbeatConnection = RunService.Heartbeat:Connect(function()
+-- Fast update loop - only aims at locked target
+RunService.Heartbeat:Connect(function()
     if aimlockEnabled and aimlockTarget then
         instantAim()
-        instantAim() -- Double call for extra certainty
     end
 end)
 
@@ -85,18 +73,14 @@ UserInputService.InputBegan:Connect(function(input)
             aimlockEnabled = not aimlockEnabled
             
             if aimlockEnabled then
+                -- FIND TARGET ONCE AND LOCK IT
                 aimlockTarget = findClosestPlayer()
                 
                 if aimlockTarget then
-                    -- Multiple instant aims for guaranteed lock
-                    for i = 1, 5 do
-                        instantAim()
-                        task.wait(0.001)
-                    end
-                    
+                    instantAim()
                     game.StarterGui:SetCore("SendNotification", {
-                        Title = "Aimbot Locked",
-                        Text = "Target: " .. aimlockTarget.Name,
+                        Title = "LOCKED ON",
+                        Text = aimlockTarget.Name,
                         Duration = 2
                     })
                 else
@@ -108,10 +92,11 @@ UserInputService.InputBegan:Connect(function(input)
                     })
                 end
             else
+                -- Release target forever
                 aimlockTarget = nil
                 game.StarterGui:SetCore("SendNotification", {
-                    Title = "Aimbot Disabled",
-                    Text = "Press Q to enable",
+                    Title = "Aimbot Off",
+                    Text = "Target released",
                     Duration = 2
                 })
             end
@@ -121,7 +106,7 @@ end)
 
 -- Initial notification
 game.StarterGui:SetCore("SendNotification", {
-    Title = "Aimbot Loaded",
-    Text = "Press Q to toggle",
+    Title = "Aimbot Ready",
+    Text = "Press Q to lock onto closest player",
     Duration = 5
 })
