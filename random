@@ -1,0 +1,628 @@
+--[[
+    Roblox Cheat Menu
+    A comprehensive GUI cheat menu framework for Roblox
+    Created for educational and testing purposes
+]]
+
+-- Wait for game to load
+local Players = game:GetService("Players")
+local RunService = runService or game:GetService("RunService")
+local TweenService = game:GetService("TweenService")
+local UserInputService = game:GetService("UserInputService")
+local HttpService = game:GetService("HttpService")
+
+-- Main GUI Creation
+local CheatMenu = {}
+CheatMenu.Enabled = false
+CheatMenu.Window = nil
+CheatMenu.Tabs = {}
+CheatMenu.Functions = {}
+
+-- Color Scheme
+local Colors = {
+    Main = Color3.fromRGB(30, 30, 40),
+    Secondary = Color3.fromRGB(40, 40, 55),
+    Accent = Color3.fromRGB(0, 150, 255),
+    Text = Color3.fromRGB(255, 255, 255),
+    TextSec = Color3.fromRGB(180, 180, 180),
+    Green = Color3.fromRGB(50, 200, 100),
+    Red = Color3.fromRGB(200, 50, 50),
+    Yellow = Color3.fromRGB(255, 200, 50)
+}
+
+-- Create Main GUI
+function CheatMenu:CreateGUI()
+    -- Create ScreenGui
+    local screenGui = Instance.new("ScreenGui")
+    screenGui.Name = "CheatMenu_GUI"
+    screenGui.ResetOnSpawn = false
+    screenGui.IgnoreGuiInset = true
+    screenGui.Parent = game.CoreGui
+
+    -- Create Main Window
+    local window = Instance.new("Frame")
+    window.Name = "CheatMenu_Window"
+    window.Size = UDim2.new(0, 650, 0, 450)
+    window.Position = UDim2.new(0.5, -325, 0.5, -225)
+    window.BackgroundColor3 = Colors.Main
+    window.BorderColor3 = Colors.Accent
+    window.BorderSizePixel = 2
+    window.ClipsDescendants = true
+    window.Parent = screenGui
+    CheatMenu.Window = window
+
+    -- Title Bar
+    local titleBar = Instance.new("Frame")
+    titleBar.Name = "TitleBar"
+    titleBar.Size = UDim2.new(1, 0, 0, 35)
+    titleBar.BackgroundColor3 = Colors.Secondary
+    titleBar.BorderColor3 = Colors.Accent
+    titleBar.BorderSizePixel = 0
+    titleBar.Parent = window
+
+    local titleLabel = Instance.new("TextLabel")
+    titleLabel.Name = "TitleLabel"
+    titleLabel.Size = UDim2.new(1, -100, 1, 0)
+    titleLabel.Position = UDim2.new(0, 10, 0, 0)
+    titleLabel.BackgroundTransparency = 1
+    titleLabel.TextColor3 = Colors.Text
+    titleLabel.TextXAlignment = Enum.TextXAlignment.Left
+    titleLabel.Font = Enum.Font.GothamBold
+    titleLabel.TextSize = 16
+    titleLabel.Text = "  Roblox Cheat Menu v1.0"
+    titleLabel.Parent = titleBar
+
+    local closeBtn = Instance.new("TextButton")
+    closeBtn.Name = "CloseButton"
+    closeBtn.Size = UDim2.new(0, 30, 0, 30)
+    closeBtn.Position = UDim2.new(1, -35, 0, 3)
+    closeBtn.BackgroundColor3 = Colors.Red
+    closeBtn.TextColor3 = Colors.Text
+    closeBtn.Font = Enum.Font.GothamBold
+    closeBtn.TextSize = 18
+    closeBtn.Text = "X"
+    closeBtn.Parent = titleBar
+
+    closeBtn.MouseButton1Click:Connect(function()
+        CheatMenu:Toggle(false)
+    end)
+
+    -- Tab Container (Left Side)
+    local tabContainer = Instance.new("Frame")
+    tabContainer.Name = "TabContainer"
+    tabContainer.Size = UDim2.new(0, 150, 1, -35)
+    tabContainer.Position = UDim2.new(0, 0, 0, 35)
+    tabContainer.BackgroundColor3 = Colors.Secondary
+    tabContainer.BorderSizePixel = 0
+    tabContainer.Parent = window
+
+    local tabScroll = Instance.new("ScrollingFrame")
+    tabScroll.Name = "TabScroll"
+    tabScroll.Size = UDim2.new(1, 0, 1, -10)
+    tabScroll.Position = UDim2.new(0, 0, 0, 5)
+    tabScroll.BackgroundTransparency = 1
+    tabScroll.ScrollBarThickness = 0
+    tabScroll.Parent = tabContainer
+
+    -- Content Area (Right Side)
+    local contentArea = Instance.new("Frame")
+    contentArea.Name = "ContentArea"
+    contentArea.Size = UDim2.new(1, -150, 1, -35)
+    contentArea.Position = UDim2.new(0, 150, 0, 35)
+    contentArea.BackgroundColor3 = Colors.Main
+    contentArea.BorderSizePixel = 0
+    contentArea.Parent = window
+
+    local contentFrame = Instance.new("Frame")
+    contentFrame.Name = "ContentFrame"
+    contentFrame.Size = UDim2.new(1, -20, 1, -20)
+    contentFrame.Position = UDim2.new(0, 10, 0, 10)
+    contentFrame.BackgroundTransparency = 1
+    contentFrame.Parent = contentArea
+    CheatMenu.ContentFrame = contentFrame
+
+    -- Draggable Functionality
+    local dragging = false
+    local dragStart = nil
+    local startPos = nil
+
+    titleBar.InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 then
+            dragging = true
+            dragStart = input.Position
+            startPos = window.Position
+        end
+    end)
+
+    UserInputService.InputChanged:Connect(function(input)
+        if dragging and input.UserInputType == Enum.UserInputType.MouseMovement then
+            local delta = input.Position - dragStart
+            window.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
+        end
+    end)
+
+    UserInputService.InputEnded:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 then
+            dragging = false
+        end
+    end)
+
+    -- Add default tabs
+    self:AddTab("Aimbot", Colors.Accent)
+    self:AddTab("ESP", Colors.Green)
+    self:AddTab("Movement", Colors.Yellow)
+    self:AddTab("Exploits", Colors.Red)
+    self:AddTab("Settings", Color3.fromRGB(150, 150, 150))
+
+    -- Select first tab
+    self:SelectTab("Aimbot")
+end
+
+-- Create Tab Button
+function CheatMenu:AddTab(name, color)
+    local tabScroll = CheatMenu.Window:WaitForChild("TabContainer"):WaitForChild("TabScroll")
+    
+    local tabBtn = Instance.new("TextButton")
+    tabBtn.Name = "Tab_" .. name
+    tabBtn.Size = UDim2.new(1, -10, 0, 40)
+    tabBtn.Position = UDim2.new(0, 5, 0, #self.Tabs * 45)
+    tabBtn.BackgroundColor3 = Colors.Secondary
+    tabBtn.TextColor3 = Colors.Text
+    tabBtn.Font = Enum.Font.GothamBold
+    tabBtn.TextSize = 14
+    tabBtn.Text = name
+    tabBtn.Parent = tabScroll
+    
+    local tabContent = Instance.new("Frame")
+    tabContent.Name = "TabContent_" .. name
+    tabContent.Size = UDim2.new(1, 0, 1, 0)
+    tabContent.BackgroundTransparency = 1
+    tabContent.Visible = false
+    tabContent.Parent = CheatMenu.ContentFrame
+    
+    self.Tabs[name] = {
+        Button = tabBtn,
+        Content = tabContent,
+        Color = color,
+        Options = {}
+    }
+
+    tabBtn.MouseButton1Click:Connect(function()
+        self:SelectTab(name)
+    end)
+end
+
+-- Select Tab
+function CheatMenu:SelectTab(name)
+    for tabName, tabData in pairs(self.Tabs) do
+        tabData.Content.Visible = (tabName == name)
+        tabData.Button.BackgroundColor3 = (tabName == name) and tabData.Color or Colors.Secondary
+    end
+end
+
+-- Create Toggle Option
+function CheatMenu:CreateToggle(parent, name, callback, defaultState)
+    local yPos = #CheatMenu.Tabs[parent.Name].Options * 30
+    
+    local toggleFrame = Instance.new("Frame")
+    toggleFrame.Name = "Toggle_" .. name
+    toggleFrame.Size = UDim2.new(1, 0, 0, 30)
+    toggleFrame.Position = UDim2.new(0, 0, 0, yPos)
+    toggleFrame.BackgroundTransparency = 1
+    toggleFrame.Parent = parent
+    
+    local toggleLabel = Instance.new("TextLabel")
+    toggleLabel.Size = UDim2.new(0.7, 0, 1, 0)
+    toggleLabel.BackgroundTransparency = 1
+    toggleLabel.TextColor3 = Colors.Text
+    toggleLabel.TextXAlignment = Enum.TextXAlignment.Left
+    toggleLabel.Font = Enum.Font.Gotham
+    toggleLabel.TextSize = 13
+    toggleLabel.Text = name
+    toggleLabel.Parent = toggleFrame
+    
+    local toggleBtn = Instance.new("TextButton")
+    toggleBtn.Name = "ToggleButton"
+    toggleBtn.Size = UDim2.new(0, 50, 0, 22)
+    toggleBtn.Position = UDim2.new(1, -55, 0, 4)
+    toggleBtn.BackgroundColor3 = Colors.Secondary
+    toggleBtn.Text = ""
+    toggleBtn.Parent = toggleFrame
+    
+    local toggleCircle = Instance.new("Frame")
+    toggleCircle.Name = "Circle"
+    toggleCircle.Size = UDim2.new(0, 16, 0, 16)
+    toggleCircle.Position = UDim2.new(0, 3, 0, 3)
+    toggleCircle.BackgroundColor3 = Colors.Text
+    toggleCircle.Parent = toggleBtn
+    
+    local state = defaultState or false
+    local function updateToggle()
+        toggleBtn.BackgroundColor3 = state and Colors.Green or Colors.Secondary
+        toggleCircle.Position = state and UDim2.new(1, -19, 0, 3) or UDim2.new(0, 3, 0, 3)
+        callback(state)
+    end
+    
+    toggleBtn.MouseButton1Click:Connect(function()
+        state = not state
+        updateToggle()
+    end)
+    
+    table.insert(CheatMenu.Tabs[parent.Name].Options, toggleFrame)
+    return updateToggle
+end
+
+-- Create Slider Option
+function CheatMenu:CreateSlider(parent, name, min, max, callback, defaultValue)
+    local yPos = #CheatMenu.Tabs[parent.Name].Options * 35
+    
+    local sliderFrame = Instance.new("Frame")
+    sliderFrame.Name = "Slider_" .. name
+    sliderFrame.Size = UDim2.new(1, 0, 0, 35)
+    sliderFrame.Position = UDim2.new(0, 0, 0, yPos)
+    sliderFrame.BackgroundTransparency = 1
+    sliderFrame.Parent = parent
+    
+    local sliderLabel = Instance.new("TextLabel")
+    sliderLabel.Size = UDim2.new(1, -60, 0, 20)
+    sliderLabel.BackgroundTransparency = 1
+    sliderLabel.TextColor3 = Colors.Text
+    sliderLabel.TextXAlignment = Enum.TextXAlignment.Left
+    sliderLabel.Font = Enum.Font.Gotham
+    sliderLabel.TextSize = 12
+    sliderLabel.Text = name .. ": " .. tostring(defaultValue or min)
+    sliderLabel.Parent = sliderFrame
+    
+    local sliderBar = Instance.new("Frame")
+    sliderBar.Size = UDim2.new(1, -10, 0, 8)
+    sliderBar.Position = UDim2.new(0, 5, 0, 20)
+    sliderBar.BackgroundColor3 = Colors.Secondary
+    sliderBar.Parent = sliderFrame
+    
+    local sliderFill = Instance.new("Frame")
+    sliderFill.Name = "Fill"
+    sliderFill.Size = UDim2.new(0, ((defaultValue or min) - min) / (max - min) * (sliderBar.AbsoluteSize.X), 1, 0)
+    sliderFill.BackgroundColor3 = Colors.Accent
+    sliderFill.Parent = sliderBar
+    
+    local value = defaultValue or min
+    local function updateSlider(newValue)
+        value = math.clamp(newValue, min, max)
+        local percent = (value - min) / (max - min)
+        sliderFill.Size = UDim2.new(percent, 0, 1, 0)
+        sliderLabel.Text = name .. ": " .. string.format("%.1f", value)
+        callback(value)
+    end
+    
+    local dragging = false
+    sliderBar.InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 then
+            dragging = true
+        end
+    end)
+    
+    UserInputService.InputChanged:Connect(function(input)
+        if dragging and input.UserInputType == Enum.UserInputType.MouseMovement then
+            local pos = (input.Position.X - sliderBar.AbsolutePosition.X) / sliderBar.AbsoluteSize.X
+            updateSlider(min + pos * (max - min))
+        end
+    end)
+    
+    UserInputService.InputEnded:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 then
+            dragging = false
+        end
+    end)
+    
+    table.insert(CheatMenu.Tabs[parent.Name].Options, sliderFrame)
+    return updateSlider
+end
+
+-- Create Button Option
+function CheatMenu:CreateButton(parent, name, callback, color)
+    local yPos = #CheatMenu.Tabs[parent.Name].Options * 35
+    
+    local buttonFrame = Instance.new("Frame")
+    buttonFrame.Name = "Button_" .. name
+    buttonFrame.Size = UDim2.new(1, 0, 0, 35)
+    buttonFrame.Position = UDim2.new(0, 0, 0, yPos)
+    buttonFrame.BackgroundTransparency = 1
+    buttonFrame.Parent = parent
+    
+    local actionBtn = Instance.new("TextButton")
+    actionBtn.Size = UDim2.new(1, -10, 0, 28)
+    actionBtn.Position = UDim2.new(0, 5, 0, 3)
+    actionBtn.BackgroundColor3 = color or Colors.Accent
+    actionBtn.TextColor3 = Colors.Text
+    actionBtn.Font = Enum.Font.GothamBold
+    actionBtn.TextSize = 13
+    actionBtn.Text = name
+    actionBtn.Parent = buttonFrame
+    
+    actionBtn.MouseButton1Click:Connect(callback)
+    
+    table.insert(CheatMenu.Tabs[parent.Name].Options, buttonFrame)
+end
+
+-- Aimbot Functions
+local aimbotEnabled = false
+local aimbotFOV = 50
+local aimbotTargetPart = "Head"
+
+function CheatMenu:SetupAimbot()
+    local aimbotTab = self.Tabs["Aimbot"]
+    
+    self:CreateToggle(aimbotTab.Content, "Enable Aimbot", function(state)
+        aimbotEnabled = state
+        if state then
+            self:StartAimbot()
+        else
+            self:StopAimbot()
+        end
+    end, false)
+    
+    self:CreateSlider(aimbotTab.Content, "FOV Radius", 10, 200, function(value)
+        aimbotFOV = value
+    end, 50)
+    
+    self:CreateToggle(aimbotTab.Content, "Show FOV", function(state)
+        self.ShowFOV = state
+    end, false)
+    
+    self:CreateToggle(aimbotTab.Content, "Target Head Only", function(state)
+        aimbotTargetPart = state and "Head" or "HumanoidRootPart"
+    end, true)
+    
+    self:CreateToggle(aimbotTab.Content, "Silent Aim", function(state)
+        self.SilentAim = state
+    end, false)
+    
+    self:CreateToggle(aimbotTab.Content, "Team Check", function(state)
+        self.TeamCheck = state
+    end, true)
+end
+
+function CheatMenu:StartAimbot()
+    -- Aimbot implementation would go here
+    -- This would require additional game-specific code
+end
+
+function CheatMenu:StopAimbot()
+    -- Cleanup aimbot
+end
+
+-- ESP Functions
+local espEnabled = false
+
+function CheatMenu:SetupESP()
+    local espTab = self.Tabs["ESP"]
+    
+    self:CreateToggle(espTab.Content, "Player ESP", function(state)
+        espEnabled = state
+        self:TogglePlayerESP(state)
+    end, false)
+    
+    self:CreateToggle(espTab.Content, "Show Names", function(state)
+        self.ShowNames = state
+    end, true)
+    
+    self:CreateToggle(espTab.Content, "Show Health", function(state)
+        self.ShowHealth = state
+    end, true)
+    
+    self:CreateToggle(espTab.Content, "Show Distance", function(state)
+        self.ShowDistance = state
+    end, false)
+    
+    self:CreateSlider(espTab.Content, "ESP Distance", 50, 500, function(value)
+        self.ESPDistance = value
+    end, 200)
+    
+    self:CreateButton(espTab.Content, "Refresh ESP", function()
+        self:RefreshESP()
+    end, Colors.Green)
+end
+
+function CheatMenu:TogglePlayerESP(state)
+    -- ESP implementation
+end
+
+function CheatMenu:RefreshESP()
+    -- Refresh ESP elements
+end
+
+-- Movement Functions
+function CheatMenu:SetupMovement()
+    local moveTab = self.Tabs["Movement"]
+    
+    self:CreateToggle(moveTab.Content, "Speed Hack", function(state)
+        self.SpeedHack = state
+        self:UpdateSpeed()
+    end, false)
+    
+    self:CreateSlider(moveTab.Content, "Speed Value", 16, 100, function(value)
+        self.SpeedValue = value
+        self:UpdateSpeed()
+    end, 32)
+    
+    self:CreateToggle(moveTab.Content, "Jump Hack", function(state)
+        self.JumpHack = state
+        self:UpdateJump()
+    end, false)
+    
+    self:CreateSlider(moveTab.Content, "Jump Value", 50, 300, function(value)
+        self.JumpValue = value
+        self:UpdateJump()
+    end, 100)
+    
+    self:CreateToggle(moveTab.Content, "Fly", function(state)
+        self.Fly = state
+        self:ToggleFly(state)
+    end, false)
+    
+    self:CreateSlider(moveTab.Content, "Fly Speed", 10, 50, function(value)
+        self.FlySpeed = value
+    end, 25)
+    
+    self:CreateToggle(moveTab.Content, "No Clip", function(state)
+        self.NoClip = state
+        self:ToggleNoClip(state)
+    end, false)
+    
+    self:CreateButton(moveTab.Content, "Teleport to Cursor", function()
+        self:TeleportToCursor()
+    end, Colors.Accent)
+    
+    self:CreateButton(moveTab.Content, "Reset Character", function()
+        self:ResetCharacter()
+    end, Colors.Red)
+end
+
+function CheatMenu:UpdateSpeed()
+    -- Speed implementation
+end
+
+function CheatMenu:UpdateJump()
+    -- Jump implementation
+end
+
+function CheatMenu:ToggleFly(state)
+    -- Fly implementation
+end
+
+function CheatMenu:ToggleNoClip(state)
+    -- NoClip implementation
+end
+
+function CheatMenu:TeleportToCursor()
+    -- Teleport implementation
+end
+
+function CheatMenu:ResetCharacter()
+    -- Reset implementation
+end
+
+-- Exploit Functions
+function CheatMenu:SetupExploits()
+    local exploitTab = self.Tabs["Exploits"]
+    
+    self:CreateButton(exploitTab.Content, "Infinite Yield", function()
+        self:LoadInfiniteYield()
+    end, Colors.Yellow)
+    
+    self:CreateButton(exploitTab.Content, "Dex Explorer", function()
+        self:LoadDex()
+    end, Colors.Green)
+    
+    self:CreateButton(exploitTab.Content, "Remote Spy", function()
+        self:LoadRemoteSpy()
+    end, Colors.Accent)
+    
+    self:CreateToggle(exploitTab.Content, "God Mode", function(state)
+        self.GodMode = state
+        self:ToggleGodMode(state)
+    end, false)
+    
+    self:CreateToggle(exploitTab.Content, "Anti-AFK", function(state)
+        self.AntiAFK = state
+    end, true)
+    
+    self:CreateToggle(exploitTab.Content, "Bypass Anti-Cheat", function(state)
+        self.AntiCheatBypass = state
+    end, false)
+end
+
+function CheatMenu:LoadInfiniteYield()
+    -- Load Infinite Yield
+    loadstring(game:HttpGet('https://raw.githubusercontent.com/EdgeIY/infiniteyield/master/source'))()
+end
+
+function CheatMenu:LoadDex()
+    -- Load Dex Explorer
+end
+
+function CheatMenu:LoadRemoteSpy()
+    -- Load Remote Spy
+end
+
+function CheatMenu:ToggleGodMode(state)
+    -- God Mode implementation
+end
+
+-- Settings Functions
+function CheatMenu:SetupSettings()
+    local settingsTab = self.Tabs["Settings"]
+    
+    self:CreateToggle(settingsTab.Content, "Watermark", function(state)
+        self.WatermarkEnabled = state
+        self:UpdateWatermark()
+    end, true)
+    
+    self:CreateToggle(settingsTab.Content, "Keybind Hints", function(state)
+        self.KeybindHints = state
+    end, true)
+    
+    self:CreateButton(settingsTab.Content, "UI Theme: Blue", function()
+        Colors.Accent = Color3.fromRGB(0, 150, 255)
+        self:ApplyTheme()
+    end, Colors.Accent)
+    
+    self:CreateButton(settingsTab.Content, "UI Theme: Green", function()
+        Colors.Accent = Color3.fromRGB(50, 200, 100)
+        self:ApplyTheme()
+    end, Colors.Green)
+    
+    self:CreateButton(settingsTab.Content, "UI Theme: Red", function()
+        Colors.Accent = Color3.fromRGB(200, 50, 50)
+        self:ApplyTheme()
+    end, Colors.Red)
+    
+    self:CreateButton(settingsTab.Content, "Reset Settings", function()
+        self:ResetSettings()
+    end, Colors.Yellow)
+end
+
+function CheatMenu:ApplyTheme()
+    -- Apply theme changes
+end
+
+function CheatMenu:UpdateWatermark()
+    -- Watermark implementation
+end
+
+function CheatMenu:ResetSettings()
+    -- Reset settings
+end
+
+-- Toggle Menu
+function CheatMenu:Toggle(state)
+    self.Enabled = state
+    if self.Window then
+        self.Window.Visible = state
+    end
+end
+
+-- Keybind to toggle menu
+local menuKey = Enum.KeyCode.RightAlt
+UserInputService.InputBegan:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.Keyboard then
+        if input.KeyCode == menuKey then
+            self:Toggle(not self.Enabled)
+        end
+    end
+end)
+
+-- Initialize Menu
+function CheatMenu:Init()
+    self:CreateGUI()
+    self:SetupAimbot()
+    self:SetupESP()
+    self:SetupMovement()
+    self:SetupExploits()
+    self:SetupSettings()
+end
+
+-- Start the menu
+CheatMenu:Init()
+
+return CheatMenu
