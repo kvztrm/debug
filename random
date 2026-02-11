@@ -1,492 +1,127 @@
 --[[
-    Roblox Cheat Menu - Rayfield UI Version
-    A comprehensive GUI cheat menu using Rayfield UI library
+    Aimbot Script
+    - Press Q to toggle aimlock on/off
+    - Automatically aims at closest player to you
 ]]
 
--- Load Rayfield UI
-local Rayfield = loadstring(game:HttpGet('https://sirius.menu/rayfield'))()
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
+local TweenService = game:GetService("TweenService")
 
--- Create Main Window
-local Window = Rayfield:CreateWindow({
-    Name = "Roblox Cheat Menu v1.0",
-    LoadingTitle = "Loading Cheat Menu...",
-    LoadingSubtitle = "Please wait...",
-    ConfigurationSaving = {
-        Enabled = true,
-        FolderName = "CheatMenuConfig",
-        FileName = "Settings"
-    },
-    Discord = {
-        Enabled = false,
-        Invite = "",
-        RememberJoins = true
-    },
-    KeySystem = false,
-})
+local LocalPlayer = Players.LocalPlayer
+local Camera = workspace.CurrentCamera
 
--- Tab 1: Aimbot
-local AimbotTab = Window:CreateTab("Aimbot", "crosshair")
-local AimbotSection = AimbotTab:CreateSection("Aimbot Settings")
+-- Script State
+local aimlockEnabled = false
+local aimlockTarget = nil
+local aimSpeed = 0.5
+local detectionRange = 100
 
-local aimbotEnabled = false
-local aimbotFOV = 50
-local aimbotTargetHead = true
-local silentAim = false
-local teamCheck = true
-
-Rayfield:CreateToggle({
-    Name = "Enable Aimbot",
-    SectionParent = AimbotSection,
-    CurrentValue = false,
-    Flag = "aimbot_enabled",
-    Callback = function(Value)
-        aimbotEnabled = Value
-        if Value then
-            StartAimbot()
-        else
-            StopAimbot()
+-- Find closest player to local player
+function findClosestPlayer()
+    local closestPlayer = nil
+    local closestDistance = detectionRange
+    
+    local character = LocalPlayer.Character
+    if not character or not character:FindFirstChild("HumanoidRootPart") then return nil end
+    
+    local myRoot = character.HumanoidRootPart
+    
+    for _, player in ipairs(Players:GetPlayers()) do
+        if player ~= LocalPlayer and player.Character and player.Character:FindFirstChild("HumanoidRootPart") then
+            local rootPart = player.Character.HumanoidRootPart
+            local distance = (rootPart.Position - myRoot.Position).Magnitude
+            
+            if distance < closestDistance then
+                closestDistance = distance
+                closestPlayer = player
+            end
         end
-    end,
-})
-
-Rayfield:CreateSlider({
-    Name = "FOV Radius",
-    SectionParent = AimbotSection,
-    Min = 10,
-    Max = 200,
-    CurrentValue = 50,
-    Increment = 1,
-    Flag = "aimbot_fov",
-    Callback = function(Value)
-        aimbotFOV = Value
-    end,
-})
-
-Rayfield:CreateToggle({
-    Name = "Target Head Only",
-    SectionParent = AimbotSection,
-    CurrentValue = true,
-    Flag = "aimbot_head_only",
-    Callback = function(Value)
-        aimbotTargetHead = Value
-    end,
-})
-
-Rayfield:CreateToggle({
-    Name = "Silent Aim",
-    SectionParent = AimbotSection,
-    CurrentValue = false,
-    Flag = "aimbot_silent",
-    Callback = function(Value)
-        silentAim = Value
-    end,
-})
-
-Rayfield:CreateToggle({
-    Name = "Team Check",
-    SectionParent = AimbotSection,
-    CurrentValue = true,
-    Flag = "aimbot_team_check",
-    Callback = function(Value)
-        teamCheck = Value
-    end,
-})
-
--- Tab 2: ESP
-local ESPTab = Window:CreateTab("ESP", "eye")
-local ESPSection = ESPTab:CreateSection("ESP Settings")
-
-local espEnabled = false
-local showNames = true
-local showHealth = true
-local showDistance = false
-local espDistance = 200
-
-Rayfield:CreateToggle({
-    Name = "Enable ESP",
-    SectionParent = ESPSection,
-    CurrentValue = false,
-    Flag = "esp_enabled",
-    Callback = function(Value)
-        espEnabled = Value
-        ToggleESP(Value)
-    end,
-})
-
-Rayfield:CreateToggle({
-    Name = "Show Names",
-    SectionParent = ESPSection,
-    CurrentValue = true,
-    Flag = "esp_names",
-    Callback = function(Value)
-        showNames = Value
-    end,
-})
-
-Rayfield:CreateToggle({
-    Name = "Show Health",
-    SectionParent = ESPSection,
-    CurrentValue = true,
-    Flag = "esp_health",
-    Callback = function(Value)
-        showHealth = Value
-    end,
-})
-
-Rayfield:CreateToggle({
-    Name = "Show Distance",
-    SectionParent = ESPSection,
-    CurrentValue = false,
-    Flag = "esp_distance",
-    Callback = function(Value)
-        showDistance = Value
-    end,
-})
-
-Rayfield:CreateSlider({
-    Name = "ESP Distance",
-    SectionParent = ESPSection,
-    Min = 50,
-    Max = 500,
-    CurrentValue = 200,
-    Increment = 10,
-    Flag = "esp_distance_slider",
-    Callback = function(Value)
-        espDistance = Value
-    end,
-})
-
-Rayfield:CreateButton({
-    Name = "Refresh ESP",
-    SectionParent = ESPSection,
-    Callback = function()
-        RefreshESP()
-        Rayfield:Notify({
-            Title = "ESP Refreshed",
-            Content = "ESP elements have been refreshed",
-            Duration = 3,
-            Image = "check"
-        })
-    end,
-})
-
--- Tab 3: Movement
-local MovementTab = Window:CreateTab("Movement", "arrow-up")
-local MovementSection = MovementTab:CreateSection("Movement Settings")
-
-local speedHack = false
-local speedValue = 32
-local jumpHack = false
-local jumpValue = 100
-local flyEnabled = false
-local flySpeed = 25
-local noClip = false
-
-Rayfield:CreateToggle({
-    Name = "Speed Hack",
-    SectionParent = MovementSection,
-    CurrentValue = false,
-    Flag = "movement_speed",
-    Callback = function(Value)
-        speedHack = Value
-        UpdateSpeed()
-    end,
-})
-
-Rayfield:CreateSlider({
-    Name = "Speed Value",
-    SectionParent = MovementSection,
-    Min = 16,
-    Max = 100,
-    CurrentValue = 32,
-    Increment = 1,
-    Flag = "movement_speed_value",
-    Callback = function(Value)
-        speedValue = Value
-        if speedHack then UpdateSpeed() end
-    end,
-})
-
-Rayfield:CreateToggle({
-    Name = "Jump Hack",
-    SectionParent = MovementSection,
-    CurrentValue = false,
-    Flag = "movement_jump",
-    Callback = function(Value)
-        jumpHack = Value
-        UpdateJump()
-    end,
-})
-
-Rayfield:CreateSlider({
-    Name = "Jump Value",
-    SectionParent = MovementSection,
-    Min = 50,
-    Max = 300,
-    CurrentValue = 100,
-    Increment = 5,
-    Flag = "movement_jump_value",
-    Callback = function(Value)
-        jumpValue = Value
-        if jumpHack then UpdateJump() end
-    end,
-})
-
-Rayfield:CreateToggle({
-    Name = "Fly Mode",
-    SectionParent = MovementSection,
-    CurrentValue = false,
-    Flag = "movement_fly",
-    Callback = function(Value)
-        flyEnabled = Value
-        ToggleFly(Value)
-    end,
-})
-
-Rayfield:CreateSlider({
-    Name = "Fly Speed",
-    SectionParent = MovementSection,
-    Min = 10,
-    Max = 50,
-    CurrentValue = 25,
-    Increment = 1,
-    Flag = "movement_fly_speed",
-    Callback = function(Value)
-        flySpeed = Value
-    end,
-})
-
-Rayfield:CreateToggle({
-    Name = "No Clip",
-    SectionParent = MovementSection,
-    CurrentValue = false,
-    Flag = "movement_noclip",
-    Callback = function(Value)
-        noClip = Value
-        ToggleNoClip(Value)
-    end,
-})
-
-Rayfield:CreateButton({
-    Name = "Teleport to Cursor",
-    SectionParent = MovementSection,
-    Callback = function()
-        TeleportToCursor()
-    end,
-})
-
-Rayfield:CreateButton({
-    Name = "Reset Character",
-    SectionParent = MovementSection,
-    Callback = function()
-        ResetCharacter()
-    end,
-})
-
--- Tab 4: Exploits
-local ExploitsTab = Window:CreateTab("Exploits", "zap")
-local ExploitsSection = ExploitsTab:CreateSection("Exploit Tools")
-
-local godMode = false
-local antiAFK = true
-
-Rayfield:CreateButton({
-    Name = "Infinite Yield",
-    SectionParent = ExploitsSection,
-    Callback = function()
-        loadstring(game:HttpGet('https://raw.githubusercontent.com/EdgeIY/infiniteyield/master/source'))()
-        Rayfield:Notify({
-            Title = "Infinite Yield",
-            Content = "Loaded successfully!",
-            Duration = 3,
-            Image = "check"
-        })
-    end,
-})
-
-Rayfield:CreateButton({
-    Name = "Dex Explorer",
-    SectionParent = ExploitsSection,
-    Callback = function()
-        -- Dex Explorer loadstring would go here
-        Rayfield:Notify({
-            Title = "Dex Explorer",
-            Content = "Feature ready to use",
-            Duration = 3,
-            Image = "check"
-        })
-    end,
-})
-
-Rayfield:CreateButton({
-    Name = "Remote Spy",
-    SectionParent = ExploitsSection,
-    Callback = function()
-        -- Remote spy loadstring would go here
-        Rayfield:Notify({
-            Title = "Remote Spy",
-            Content = "Feature ready to use",
-            Duration = 3,
-            Image = "check"
-        })
-    end,
-})
-
-Rayfield:CreateToggle({
-    Name = "God Mode",
-    SectionParent = ExploitsSection,
-    CurrentValue = false,
-    Flag = "exploits_godmode",
-    Callback = function(Value)
-        godMode = Value
-        ToggleGodMode(Value)
-    end,
-})
-
-Rayfield:CreateToggle({
-    Name = "Anti-AFK",
-    SectionParent = ExploitsSection,
-    CurrentValue = true,
-    Flag = "exploits_antiafk",
-    Callback = function(Value)
-        antiAFK = Value
-        if Value then StartAntiAFK() else StopAntiAFK() end
-    end,
-})
-
--- Tab 5: Settings
-local SettingsTab = Window:CreateTab("Settings", "settings")
-local SettingsSection = SettingsTab:CreateSection("Menu Settings")
-
-Rayfield:CreateToggle({
-    Name = "Watermark",
-    SectionParent = SettingsSection,
-    CurrentValue = true,
-    Flag = "settings_watermark",
-    Callback = function(Value)
-        -- Watermark toggle
-    end,
-})
-
-Rayfield:CreateToggle({
-    Name = "Keybind Hints",
-    SectionParent = SettingsSection,
-    CurrentValue = true,
-    Flag = "settings_hints",
-    Callback = function(Value)
-        -- Keybind hints toggle
-    end,
-})
-
-Rayfield:CreateButton({
-    Name = "Save Settings",
-    SectionParent = SettingsSection,
-    Callback = function()
-        Rayfield:SaveConfiguration()
-        Rayfield:Notify({
-            Title = "Settings Saved",
-            Content = "Configuration saved successfully!",
-            Duration = 3,
-            Image = "check"
-        })
-    end,
-})
-
-Rayfield:CreateButton({
-    Name = "Load Settings",
-    SectionParent = SettingsSection,
-    Callback = function()
-        Rayfield:LoadConfiguration()
-        Rayfield:Notify({
-            Title = "Settings Loaded",
-            Content = "Configuration loaded successfully!",
-            Duration = 3,
-            Image = "check"
-        })
-    end,
-})
-
--- Function Implementations
-function StartAimbot()
-    -- Aimbot implementation
-end
-
-function StopAimbot()
-    -- Aimbot cleanup
-end
-
-function ToggleESP(state)
-    -- ESP toggle implementation
-end
-
-function RefreshESP()
-    -- ESP refresh implementation
-end
-
-function UpdateSpeed()
-    local player = game.Players.LocalPlayer
-    local character = player.Character or player.CharacterAdded:Wait()
-    local humanoid = character:FindFirstChild("Humanoid")
-    if humanoid and speedHack then
-        humanoid.WalkSpeed = speedValue
     end
+    
+    return closestPlayer
 end
 
-function UpdateJump()
-    local player = game.Players.LocalPlayer
-    local character = player.Character or player.CharacterAdded:Wait()
-    local humanoid = character:FindFirstChild("Humanoid")
-    if humanoid and jumpHack then
-        humanoid.JumpPower = jumpValue
-    end
+-- Aim at target
+function aimAtTarget()
+    if not aimlockEnabled or not aimlockTarget or not aimlockTarget.Character then return end
+    
+    local targetRoot = aimlockTarget.Character:FindFirstChild("HumanoidRootPart")
+    local targetHead = aimlockTarget.Character:FindFirstChild("Head")
+    
+    if not targetRoot and not targetHead then return end
+    
+    -- Aim at head if available, otherwise root
+    local aimPart = targetHead or targetRoot
+    if not aimPart then return end
+    
+    -- Calculate aim direction
+    local aimCFrame = CFrame.new(Camera.CFrame.Position, aimPart.Position)
+    
+    -- Smooth aim with tween
+    local tweenInfo = TweenInfo.new(aimSpeed, Enum.EasingStyle.Linear, Enum.EasingDirection.Out)
+    local tween = TweenService:Create(Camera, tweenInfo, {CFrame = aimCFrame})
+    tween:Play()
 end
 
-function ToggleFly(state)
-    -- Fly implementation
-end
-
-function ToggleNoClip(state)
-    -- NoClip implementation
-end
-
-function TeleportToCursor()
-    local player = game.Players.LocalPlayer
-    local character = player.Character or player.CharacterAdded:Wait()
-    local mouse = player:GetMouse()
-    local humanoidRootPart = character:FindFirstChild("HumanoidRootPart")
-    if humanoidRootPart then
-        humanoidRootPart.CFrame = CFrame.new(mouse.Hit.p)
-    end
-end
-
-function ResetCharacter()
-    local player = game.Players.LocalPlayer
-    player:LoadCharacter()
-end
-
-function ToggleGodMode(state)
-    -- God mode implementation
-end
-
-function StartAntiAFK()
-    local player = game.Players.LocalPlayer
-    local connection
-    connection = player.Idled:Connect(function()
-        -- Anti-AFK action
+-- Update loop
+function updateAimbot()
+    RunService.RenderStepped:Connect(function()
+        if aimlockEnabled then
+            -- Find closest player
+            local closest = findClosestPlayer()
+            
+            if closest ~= aimlockTarget then
+                aimlockTarget = closest
+                
+                if closest then
+                    game.StarterGui:SetCore("SendNotification", {
+                        Title = "Aimbot Target",
+                        Text = closest.Name,
+                        Duration = 1
+                    })
+                end
+            end
+            
+            -- Keep aiming at target
+            if aimlockTarget then
+                aimAtTarget()
+            end
+        else
+            aimlockTarget = nil
+        end
     end)
 end
 
-function StopAntiAFK()
-    -- Stop anti-AFK
-end
+-- Toggle with Q
+UserInputService.InputBegan:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.Keyboard then
+        if input.KeyCode == Enum.KeyCode.Q then
+            aimlockEnabled = not aimlockEnabled
+            
+            if aimlockEnabled then
+                game.StarterGui:SetCore("SendNotification", {
+                    Title = "Aimbot Enabled",
+                    Text = "Press Q to disable",
+                    Duration = 2
+                })
+                updateAimbot()
+            else
+                game.StarterGui:SetCore("SendNotification", {
+                    Title = "Aimbot Disabled",
+                    Text = "Press Q to enable",
+                    Duration = 2
+                })
+                aimlockTarget = nil
+            end
+        end
+    end
+end)
 
--- Welcome Notification
-Rayfield:Notify({
-    Title = "Cheat Menu Loaded",
-    Content = "Press Right Alt to toggle menu",
-    Duration = 5,
-    Image = "check"
+-- Initial notification
+game.StarterGui:SetCore("SendNotification", {
+    Title = "Aimbot Loaded",
+    Text = "Press Q to toggle",
+    Duration = 5
 })
-
--- Load saved settings
-Rayfield:LoadConfiguration()
