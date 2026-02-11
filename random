@@ -1,13 +1,13 @@
 --[[
-    Aimbot Script
+    Instant Aimbot Script
     - Press Q to toggle aimlock on/off
-    - Automatically aims at closest player to you
+    - Instantly locks onto closest player's head
+    - Stays locked until toggle is pressed
 ]]
 
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
-local TweenService = game:GetService("TweenService")
 
 local LocalPlayer = Players.LocalPlayer
 local Camera = workspace.CurrentCamera
@@ -15,7 +15,6 @@ local Camera = workspace.CurrentCamera
 -- Script State
 local aimlockEnabled = false
 local aimlockTarget = nil
-local aimSpeed = 5
 local detectionRange = 100
 
 -- Find closest player to local player
@@ -43,56 +42,28 @@ function findClosestPlayer()
     return closestPlayer
 end
 
--- Aim at target
-function aimAtTarget()
-    if not aimlockEnabled or not aimlockTarget or not aimlockTarget.Character then return end
+-- Instant aim function
+function instantAim()
+    if not aimlockTarget or not aimlockTarget.Character then return end
     
-    local targetRoot = aimlockTarget.Character:FindFirstChild("HumanoidRootPart")
     local targetHead = aimlockTarget.Character:FindFirstChild("Head")
+    if not targetHead then
+        -- Fallback to humanoid root part
+        targetHead = aimlockTarget.Character:FindFirstChild("HumanoidRootPart")
+    end
     
-    if not targetRoot and not targetHead then return end
+    if not targetHead then return end
     
-    -- Aim at head if available, otherwise root
-    local aimPart = targetHead or targetRoot
-    if not aimPart then return end
-    
-    -- Calculate aim direction
-    local aimCFrame = CFrame.new(Camera.CFrame.Position, aimPart.Position)
-    
-    -- Smooth aim with tween
-    local tweenInfo = TweenInfo.new(aimSpeed, Enum.EasingStyle.Linear, Enum.EasingDirection.Out)
-    local tween = TweenService:Create(Camera, tweenInfo, {CFrame = aimCFrame})
-    tween:Play()
+    -- Instant lock to head position
+    Camera.CFrame = CFrame.new(Camera.CFrame.Position, targetHead.Position)
 end
 
 -- Update loop
-function updateAimbot()
-    RunService.RenderStepped:Connect(function()
-        if aimlockEnabled then
-            -- Find closest player
-            local closest = findClosestPlayer()
-            
-            if closest ~= aimlockTarget then
-                aimlockTarget = closest
-                
-                if closest then
-                    game.StarterGui:SetCore("SendNotification", {
-                        Title = "Aimbot Target",
-                        Text = closest.Name,
-                        Duration = 1
-                    })
-                end
-            end
-            
-            -- Keep aiming at target
-            if aimlockTarget then
-                aimAtTarget()
-            end
-        else
-            aimlockTarget = nil
-        end
-    end)
-end
+RunService.RenderStepped:Connect(function()
+    if aimlockEnabled and aimlockTarget then
+        instantAim()
+    end
+end)
 
 -- Toggle with Q
 UserInputService.InputBegan:Connect(function(input)
@@ -101,19 +72,33 @@ UserInputService.InputBegan:Connect(function(input)
             aimlockEnabled = not aimlockEnabled
             
             if aimlockEnabled then
-                game.StarterGui:SetCore("SendNotification", {
-                    Title = "Aimbot Enabled",
-                    Text = "Press Q to disable",
-                    Duration = 2
-                })
-                updateAimbot()
+                -- Find and lock to closest player immediately
+                aimlockTarget = findClosestPlayer()
+                
+                if aimlockTarget then
+                    instantAim() -- Instant lock on toggle
+                    
+                    game.StarterGui:SetCore("SendNotification", {
+                        Title = "Aimbot Locked",
+                        Text = "Target: " .. aimlockTarget.Name,
+                        Duration = 2
+                    })
+                else
+                    game.StarterGui:SetCore("SendNotification", {
+                        Title = "No Target Found",
+                        Text = "No players in range",
+                        Duration = 2
+                    })
+                    aimlockEnabled = false
+                end
             else
+                aimlockTarget = nil
+                
                 game.StarterGui:SetCore("SendNotification", {
                     Title = "Aimbot Disabled",
                     Text = "Press Q to enable",
                     Duration = 2
                 })
-                aimlockTarget = nil
             end
         end
     end
@@ -121,7 +106,7 @@ end)
 
 -- Initial notification
 game.StarterGui:SetCore("SendNotification", {
-    Title = "Aimbot Loaded",
+    Title = "Instant Aimbot Loaded",
     Text = "Press Q to toggle",
     Duration = 5
 })
