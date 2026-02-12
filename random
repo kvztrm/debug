@@ -1,4 +1,4 @@
--- CS2-Style Aimbot
+-- CS2-Style Aimbot (Mouse Tracking)
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
@@ -7,33 +7,29 @@ local LocalPlayer = Players.LocalPlayer
 local Camera = workspace.CurrentCamera
 local Mouse = LocalPlayer:GetMouse()
 
--- Settings
 local settings = {
     enabled = false,
     fov = 80,
     aimKey = Enum.KeyCode.Q,
     aimPart = "Head",
-    smoothing = 0.1, -- CS2-like smooth aim
-    closestToMouse = false
+    smoothing = 0.05 -- Very fast aim
 }
 
 local currentTarget = nil
 local targetHealth = 100
 
--- Create CS2-style Target Info GUI
+-- GUI Setup
 local screenGui = Instance.new("ScreenGui")
 screenGui.Name = "CS2AimbotGUI"
 screenGui.IgnoreGuiInset = true
 screenGui.Parent = game.CoreGui
 
--- FOV Circle (CS2 style - thin green line)
 local fovCircle = Drawing.new("Circle")
 fovCircle.Thickness = 1
 fovCircle.NumSides = 64
 fovCircle.Filled = false
 fovCircle.Color = Color3.fromRGB(0, 255, 100)
 
--- Target Info Box (appears when locked)
 local targetInfo = Instance.new("Frame")
 targetInfo.Size = UDim2.new(0, 180, 0, 50)
 targetInfo.Position = UDim2.new(0.5, -90, 0, 50)
@@ -97,7 +93,6 @@ function updateTargetInfo(player)
         targetHealth = 100
         healthBar.Size = UDim2.new(1, 0, 1, 0)
         healthText.Text = "0 HP"
-        healthText.TextColor3 = Color3.fromRGB(255, 50, 50)
     end
 end
 
@@ -110,7 +105,7 @@ function worldToScreen(worldPoint)
     return Vector2.new(screenPos.X, screenPos.Y), onScreen
 end
 
-function findTarget()
+function findClosestToCrosshair()
     local screenCenter = getScreenSize() / 2
     local closestPlayer = nil
     local closestDistance = settings.fov
@@ -130,7 +125,7 @@ function findTarget()
             end
         end
     end
-    return closestPlayer
+    return closestPlayer, closestDistance
 end
 
 function aimAt(target)
@@ -142,14 +137,12 @@ function aimAt(target)
     local currentCFrame = Camera.CFrame
     local targetCFrame = CFrame.new(currentCFrame.Position, targetPos)
     
-    -- CS2-style smooth aim
     local tweenInfo = TweenInfo.new(settings.smoothing, Enum.EasingStyle.Linear, Enum.EasingDirection.Out)
     TweenService:Create(Camera, tweenInfo, {CFrame = targetCFrame}):Play()
-    
     Mouse.Hit = CFrame.new(targetPos)
 end
 
--- Monitor target health and switch when dead
+-- Monitor target health
 RunService.Heartbeat:Connect(function()
     if settings.enabled and currentTarget and currentTarget.Character then
         local humanoid = currentTarget.Character:FindFirstChildOfClass("Humanoid")
@@ -157,37 +150,31 @@ RunService.Heartbeat:Connect(function()
             local currentHP = humanoid.Health
             local maxHP = humanoid.MaxHealth
             
-            -- Update health display
             targetHealth = currentHP
             local hpPercent = math.clamp(currentHP / maxHP, 0, 1)
             healthBar.Size = UDim2.new(hpPercent, 0, 1, 0)
             healthText.Text = math.floor(currentHP) .. " HP"
             
-            -- Color based on HP
             if currentHP > 75 then
                 healthBar.BackgroundColor3 = Color3.fromRGB(0, 200, 100)
-                healthText.TextColor3 = Color3.fromRGB(0, 255, 100)
             elseif currentHP > 50 then
                 healthBar.BackgroundColor3 = Color3.fromRGB(255, 200, 0)
-                healthText.TextColor3 = Color3.fromRGB(255, 200, 0)
             elseif currentHP > 25 then
                 healthBar.BackgroundColor3 = Color3.fromRGB(255, 100, 0)
-                healthText.TextColor3 = Color3.fromRGB(255, 100, 0)
             else
                 healthBar.BackgroundColor3 = Color3.fromRGB(200, 50, 50)
-                healthText.TextColor3 = Color3.fromRGB(255, 50, 50)
             end
             
-            -- Switch to new target when current one dies
+            -- Switch when target dies
             if currentHP <= 0 then
-                currentTarget = findTarget()
+                currentTarget = findClosestToCrosshair()
                 updateTargetInfo(currentTarget)
             end
         end
     end
 end)
 
--- Main aim loop
+-- Main loop - constantly checks for closest target
 RunService.RenderStepped:Connect(function()
     local screenCenter = getScreenSize() / 2
     
@@ -196,13 +183,16 @@ RunService.RenderStepped:Connect(function()
         fovCircle.Radius = settings.fov
         fovCircle.Visible = true
         
-        -- Find new target if current is invalid
-        if not currentTarget or not currentTarget.Character then
-            currentTarget = findTarget()
+        -- Always find closest to crosshair
+        local newTarget, dist = findClosestToCrosshair()
+        
+        -- Switch target if someone else is closer to crosshair
+        if newTarget and newTarget ~= currentTarget then
+            currentTarget = newTarget
             updateTargetInfo(currentTarget)
         end
         
-        -- Continue aiming at current target
+        -- Aim at current target
         if currentTarget then
             aimAt(currentTarget)
         end
@@ -213,13 +203,12 @@ RunService.RenderStepped:Connect(function()
     end
 end)
 
--- Controls
 UserInputService.InputBegan:Connect(function(input)
     if input.KeyCode == settings.aimKey and input.UserInputType == Enum.UserInputType.Keyboard then
         settings.enabled = not settings.enabled
         
         if settings.enabled then
-            currentTarget = findTarget()
+            currentTarget = findClosestToCrosshair()
             updateTargetInfo(currentTarget)
             if currentTarget then aimAt(currentTarget) end
         else
@@ -232,7 +221,6 @@ UserInputService.InputBegan:Connect(function(input)
         settings.aimPart = settings.aimPart == "Head" and "HumanoidRootPart" or "Head"
     end
     
-    -- Adjust FOV with +/- keys
     if input.KeyCode == Enum.KeyCode.Equals and settings.enabled then
         settings.fov = math.min(settings.fov + 5, 200)
     end
@@ -241,7 +229,6 @@ UserInputService.InputBegan:Connect(function(input)
     end
 end)
 
--- Notification
 game.StarterGui:SetCore("SendNotification", {
     Title = "CS2 Aimbot Loaded",
     Text = "Q: Toggle | E: Switch Part | +/-: FOV",
