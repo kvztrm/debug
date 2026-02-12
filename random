@@ -1,22 +1,28 @@
--- CS2-Style Aimbot (Mouse Tracking)
+-- CS2-Style Aimbot with ESP
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
 local TweenService = game:GetService("TweenService")
+local Workspace = game:GetService("Workspace")
 local LocalPlayer = Players.LocalPlayer
 local Camera = workspace.CurrentCamera
 local Mouse = LocalPlayer:GetMouse()
 
 local settings = {
     enabled = false,
+    espEnabled = false,
     fov = 80,
     aimKey = Enum.KeyCode.Q,
+    espKey = Enum.KeyCode.Z,
     aimPart = "Head",
-    smoothing = 0.05 -- Very fast aim
+    smoothing = 0.05,
+    wallCheck = false,
+    teamCheck = false
 }
 
 local currentTarget = nil
 local targetHealth = 100
+local espConnections = {}
 
 -- GUI Setup
 local screenGui = Instance.new("ScreenGui")
@@ -96,6 +102,33 @@ function updateTargetInfo(player)
     end
 end
 
+function isSameTeam(player)
+    if not settings.teamCheck then return false end
+    local myTeam = LocalPlayer.Team
+    if not myTeam then return false end
+    return player.Team == myTeam
+end
+
+function isVisible(player)
+    if not settings.wallCheck then return true end
+    local part = player.Character and (player.Character:FindFirstChild("Head") or player.Character:FindFirstChild("HumanoidRootPart"))
+    if not part then return false end
+    
+    local origin = Camera.CFrame.Position
+    local direction = (part.Position - origin).Unit * 500
+    
+    local params = RaycastParams.new()
+    params.FilterType = Enum.RaycastFilterType.Exclude
+    params.FilterDescendantsInstances = {LocalPlayer.Character}
+    
+    local result = Workspace:Raycast(origin, direction, params)
+    if result then
+        local hitPart = result.Instance
+        return hitPart and (hitPart:IsDescendantOf(player.Character) or hitPart == part)
+    end
+    return true
+end
+
 function getScreenSize()
     return workspace.CurrentCamera.ViewportSize
 end
@@ -111,7 +144,7 @@ function findClosestToCrosshair()
     local closestDistance = settings.fov
     
     for _, p in ipairs(Players:GetPlayers()) do
-        if p ~= LocalPlayer and p.Character then
+        if p ~= LocalPlayer and p.Character and not isSameTeam(p) and isVisible(p) then
             local part = p.Character:FindFirstChild(settings.aimPart) or p.Character:FindFirstChild("HumanoidRootPart")
             if part then
                 local screenPos, onScreen = worldToScreen(part.Position)
@@ -142,7 +175,129 @@ function aimAt(target)
     Mouse.Hit = CFrame.new(targetPos)
 end
 
--- Monitor target health
+-- ESP Functions
+function createPlayerESP(player)
+    clearESP(player)
+    
+    local conn1, conn2
+    local box = Drawing.new("Square")
+    box.Thickness = 1
+    box.Color = Color3.fromRGB(255, 50, 50)
+    box.Filled = false
+    box.Visible = false
+    
+    local hpBar = Drawing.new("Line")
+    hpBar.Thickness = 2
+    hpBar.Color = Color3.fromRGB(0, 255, 0)
+    hpBar.From = Vector2.new(0, 0)
+    hpBar.To = Vector2.new(0, 0)
+    hpBar.Visible = false
+    
+    local hpText = Drawing.new("Text")
+    hpText.Size = 12
+    hpText.Color = Color3.fromRGB(255, 255, 255)
+    hpText.Center = true
+    hpText.Visible = false
+    
+    local nameText = Drawing.new("Text")
+    nameText.Size = 12
+    nameText.Color = Color3.fromRGB(255, 255, 255)
+    nameText.Center = true
+    nameText.Visible = false
+    
+    conn1 = RunService.RenderStepped:Connect(function()
+        if not settings.espEnabled or not player.Character then
+            box.Visible = false
+            hpBar.Visible = false
+            hpText.Visible = false
+            nameText.Visible = false
+            return
+        end
+        
+        local humanoid = player.Character:FindFirstChildOfClass("Humanoid")
+        local rootPart = player.Character:FindFirstChild("HumanoidRootPart")
+        local head = player.Character:FindFirstChild("Head")
+        
+        if humanoid and rootPart and head then
+            local headPos, onScreen = worldToScreen(head.Position)
+            local rootPos, rootOnScreen = worldToScreen(rootPart.Position)
+            
+            if onScreen and rootOnScreen then
+                local height = math.abs(headPos.Y - rootPos.Y)
+                local width = height * 0.6
+                
+                box.Size = Vector2.new(width, height)
+                box.Position = Vector2.new(rootPos.X - width/2, headPos.Y)
+                box.Visible = true
+                
+                -- Health bar
+                local hpPercent = humanoid.Health / humanoid.MaxHealth
+                local barHeight = height * hpPercent
+                hpBar.From = Vector2.new(box.Position.X + width + 2, box.Position.Y + height)
+                hpBar.To = Vector2.new(box.Position.X + width + 2, box.Position.Y + height - barHeight)
+                hpBar.Color = hpPercent > 0.5 and Color3.fromRGB(0, 255, 0) or hpPercent > 0.25 and Color3.fromRGB(255, 165, 0) or Color3.fromRGB(255, 0, 0)
+                hpBar.Visible = true
+                
+                -- HP text
+                hpText.Text = math.floor(humanoid.Health)
+                hpText.Position = Vector2.new(box.Position.X + width/2, box.Position.Y + height + 2)
+                hpText.Visible = true
+                
+                -- Name
+                nameText.Text = player.Name
+                nameText.Position = Vector2.new(box.Position.X + width/2, box.Position.Y - 14)
+                nameText.Visible = true
+            else
+                box.Visible = false
+                hpBar.Visible = false
+                hpText.Visible = false
+                nameText.Visible = false
+            end
+        end
+    end)
+    
+    conn2 = player.CharacterAdded:Connect(function()
+        clearESP(player)
+    end)
+    
+    espConnections[player] = {conn1, conn2, box, hpBar, hpText, nameText}
+end
+
+function clearESP(player)
+    if espConnections[player] then
+        for _, obj in ipairs(espConnections[player]) do
+            if typeof(obj) == "table" then
+                for _, draw in ipairs(obj) do
+                    if draw.Visible ~= nil then draw:Remove() end
+                end
+            elseif typeof(obj) == "function" then obj:Disconnect()
+            elseif obj.Visible ~= nil then obj.Visible = false end
+        end
+        espConnections[player] = nil
+    end
+end
+
+function toggleESP()
+    settings.espEnabled = not settings.espEnabled
+    
+    if settings.espEnabled then
+        for _, p in ipairs(Players:GetPlayers()) do
+            if p ~= LocalPlayer then
+                createPlayerESP(p)
+            end
+        end
+        
+        Players.PlayerAdded:Connect(function(p)
+            createPlayerESP(p)
+        end)
+    else
+        for p, _ in pairs(espConnections) do
+            clearESP(p)
+        end
+    end
+end
+
+-- Main loops
 RunService.Heartbeat:Connect(function()
     if settings.enabled and currentTarget and currentTarget.Character then
         local humanoid = currentTarget.Character:FindFirstChildOfClass("Humanoid")
@@ -155,17 +310,11 @@ RunService.Heartbeat:Connect(function()
             healthBar.Size = UDim2.new(hpPercent, 0, 1, 0)
             healthText.Text = math.floor(currentHP) .. " HP"
             
-            if currentHP > 75 then
-                healthBar.BackgroundColor3 = Color3.fromRGB(0, 200, 100)
-            elseif currentHP > 50 then
-                healthBar.BackgroundColor3 = Color3.fromRGB(255, 200, 0)
-            elseif currentHP > 25 then
-                healthBar.BackgroundColor3 = Color3.fromRGB(255, 100, 0)
-            else
-                healthBar.BackgroundColor3 = Color3.fromRGB(200, 50, 50)
-            end
+            if currentHP > 75 then healthBar.BackgroundColor3 = Color3.fromRGB(0, 200, 100)
+            elseif currentHP > 50 then healthBar.BackgroundColor3 = Color3.fromRGB(255, 200, 0)
+            elseif currentHP > 25 then healthBar.BackgroundColor3 = Color3.fromRGB(255, 100, 0)
+            else healthBar.BackgroundColor3 = Color3.fromRGB(200, 50, 50) end
             
-            -- Switch when target dies
             if currentHP <= 0 then
                 currentTarget = findClosestToCrosshair()
                 updateTargetInfo(currentTarget)
@@ -174,7 +323,6 @@ RunService.Heartbeat:Connect(function()
     end
 end)
 
--- Main loop - constantly checks for closest target
 RunService.RenderStepped:Connect(function()
     local screenCenter = getScreenSize() / 2
     
@@ -183,19 +331,14 @@ RunService.RenderStepped:Connect(function()
         fovCircle.Radius = settings.fov
         fovCircle.Visible = true
         
-        -- Always find closest to crosshair
-        local newTarget, dist = findClosestToCrosshair()
+        local newTarget, _ = findClosestToCrosshair()
         
-        -- Switch target if someone else is closer to crosshair
         if newTarget and newTarget ~= currentTarget then
             currentTarget = newTarget
             updateTargetInfo(currentTarget)
         end
         
-        -- Aim at current target
-        if currentTarget then
-            aimAt(currentTarget)
-        end
+        if currentTarget then aimAt(currentTarget) end
     else
         fovCircle.Visible = false
         targetInfo.Visible = false
@@ -206,7 +349,6 @@ end)
 UserInputService.InputBegan:Connect(function(input)
     if input.KeyCode == settings.aimKey and input.UserInputType == Enum.UserInputType.Keyboard then
         settings.enabled = not settings.enabled
-        
         if settings.enabled then
             currentTarget = findClosestToCrosshair()
             updateTargetInfo(currentTarget)
@@ -215,6 +357,10 @@ UserInputService.InputBegan:Connect(function(input)
             currentTarget = nil
             targetInfo.Visible = false
         end
+    end
+    
+    if input.KeyCode == settings.espKey and input.UserInputType == Enum.UserInputType.Keyboard then
+        toggleESP()
     end
     
     if input.KeyCode == Enum.KeyCode.E and settings.enabled then
@@ -231,6 +377,6 @@ end)
 
 game.StarterGui:SetCore("SendNotification", {
     Title = "CS2 Aimbot Loaded",
-    Text = "Q: Toggle | E: Switch Part | +/-: FOV",
+    Text = "Q: Aimbot | Z: ESP | E: Part | +/-: FOV",
     Duration = 5
 })
