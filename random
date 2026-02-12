@@ -4,8 +4,8 @@ local RunService = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
 local TweenService = game:GetService("TweenService")
 local Workspace = game:GetService("Workspace")
+local Camera = Workspace.CurrentCamera
 local LocalPlayer = Players.LocalPlayer
-local Camera = workspace.CurrentCamera
 local Mouse = LocalPlayer:GetMouse()
 
 local settings = {
@@ -109,24 +109,15 @@ function isSameTeam(player)
     return player.Team == myTeam
 end
 
-function isVisible(player)
+-- Improved wall check using GetPartsObscuringTarget
+function isVisible(targetPart)
     if not settings.wallCheck then return true end
-    local part = player.Character and (player.Character:FindFirstChild("Head") or player.Character:FindFirstChild("HumanoidRootPart"))
-    if not part then return false end
+    if not targetPart or not targetPart.Parent then return false end
     
-    local origin = Camera.CFrame.Position
-    local direction = (part.Position - origin).Unit * 500
+    local ignoreList = {LocalPlayer.Character, Camera}
+    local obscuringParts = Camera:GetPartsObscuringTarget({targetPart.Position}, ignoreList)
     
-    local params = RaycastParams.new()
-    params.FilterType = Enum.RaycastFilterType.Exclude
-    params.FilterDescendantsInstances = {LocalPlayer.Character}
-    
-    local result = Workspace:Raycast(origin, direction, params)
-    if result then
-        local hitPart = result.Instance
-        return hitPart and (hitPart:IsDescendantOf(player.Character) or hitPart == part)
-    end
-    return true
+    return #obscuringParts == 0
 end
 
 function getScreenSize()
@@ -144,9 +135,9 @@ function findClosestToCrosshair()
     local closestDistance = settings.fov
     
     for _, p in ipairs(Players:GetPlayers()) do
-        if p ~= LocalPlayer and p.Character and not isSameTeam(p) and isVisible(p) then
+        if p ~= LocalPlayer and p.Character and not isSameTeam(p) then
             local part = p.Character:FindFirstChild(settings.aimPart) or p.Character:FindFirstChild("HumanoidRootPart")
-            if part then
+            if part and isVisible(part) then
                 local screenPos, onScreen = worldToScreen(part.Position)
                 if onScreen then
                     local distToCenter = (screenPos - screenCenter).Magnitude
@@ -180,17 +171,19 @@ function createPlayerESP(player)
     clearESP(player)
     
     local conn1, conn2
-    local box = Drawing.new("Square")
-    box.Thickness = 1
-    box.Color = Color3.fromRGB(255, 50, 50)
-    box.Filled = false
-    box.Visible = false
+    
+    local boxLines = {}
+    for i = 1, 12 do
+        local line = Drawing.new("Line")
+        line.Thickness = 1
+        line.Color = Color3.fromRGB(255, 50, 50)
+        line.Visible = false
+        table.insert(boxLines, line)
+    end
     
     local hpBar = Drawing.new("Line")
     hpBar.Thickness = 2
     hpBar.Color = Color3.fromRGB(0, 255, 0)
-    hpBar.From = Vector2.new(0, 0)
-    hpBar.To = Vector2.new(0, 0)
     hpBar.Visible = false
     
     local hpText = Drawing.new("Text")
@@ -207,7 +200,7 @@ function createPlayerESP(player)
     
     conn1 = RunService.RenderStepped:Connect(function()
         if not settings.espEnabled or not player.Character then
-            box.Visible = false
+            for _, line in ipairs(boxLines) do line.Visible = false end
             hpBar.Visible = false
             hpText.Visible = false
             nameText.Visible = false
@@ -218,41 +211,81 @@ function createPlayerESP(player)
         local rootPart = player.Character:FindFirstChild("HumanoidRootPart")
         local head = player.Character:FindFirstChild("Head")
         
-        if humanoid and rootPart and head then
-            local headPos, onScreen = worldToScreen(head.Position)
-            local rootPos, rootOnScreen = worldToScreen(rootPart.Position)
-            
-            if onScreen and rootOnScreen then
-                local height = math.abs(headPos.Y - rootPos.Y)
-                local width = height * 0.6
-                
-                box.Size = Vector2.new(width, height)
-                box.Position = Vector2.new(rootPos.X - width/2, headPos.Y)
-                box.Visible = true
-                
-                -- Health bar
-                local hpPercent = humanoid.Health / humanoid.MaxHealth
-                local barHeight = height * hpPercent
-                hpBar.From = Vector2.new(box.Position.X + width + 2, box.Position.Y + height)
-                hpBar.To = Vector2.new(box.Position.X + width + 2, box.Position.Y + height - barHeight)
-                hpBar.Color = hpPercent > 0.5 and Color3.fromRGB(0, 255, 0) or hpPercent > 0.25 and Color3.fromRGB(255, 165, 0) or Color3.fromRGB(255, 0, 0)
-                hpBar.Visible = true
-                
-                -- HP text
-                hpText.Text = math.floor(humanoid.Health)
-                hpText.Position = Vector2.new(box.Position.X + width/2, box.Position.Y + height + 2)
-                hpText.Visible = true
-                
-                -- Name
-                nameText.Text = player.Name
-                nameText.Position = Vector2.new(box.Position.X + width/2, box.Position.Y - 14)
-                nameText.Visible = true
-            else
-                box.Visible = false
-                hpBar.Visible = false
-                hpText.Visible = false
-                nameText.Visible = false
+        if not humanoid or not rootPart or not head then return end
+        
+        -- Calculate box from actual player dimensions
+        local offset = 1.5
+        local corners = {
+            Vector3.new(-offset, 0, -offset),
+            Vector3.new(offset, 0, -offset),
+            Vector3.new(offset, 0, offset),
+            Vector3.new(-offset, 0, offset),
+            Vector3.new(-offset, humanoid.Height, -offset),
+            Vector3.new(offset, humanoid.Height, -offset),
+            Vector3.new(offset, humanoid.Height, offset),
+            Vector3.new(-offset, humanoid.Height, offset)
+        }
+        
+        local cframe = rootPart.CFrame
+        local screenPoints = {}
+        
+        for _, corner in ipairs(corners) do
+            local worldPos = cframe:PointToWorldSpace(corner)
+            local screenPos, onScreen = worldToScreen(worldPos)
+            if onScreen then
+                table.insert(screenPoints, screenPos)
             end
+        end
+        
+        if #screenPoints >= 8 then
+            local minX, maxX = math.huge, -math.huge
+            local minY, maxY = math.huge, -math.huge
+            
+            for _, pt in ipairs(screenPoints) do
+                minX = math.min(minX, pt.X)
+                maxX = math.max(maxX, pt.X)
+                minY = math.min(minY, pt.Y)
+                maxY = math.max(maxY, pt.Y)
+            end
+            
+            local width = maxX - minX
+            local height = maxY - minY
+            
+            if #boxLines >= 12 then
+                boxLines[1].From = Vector2.new(minX, minY)
+                boxLines[1].To = Vector2.new(minX + width*0.25, minY)
+                boxLines[2].From = Vector2.new(maxX - width*0.25, minY)
+                boxLines[2].To = Vector2.new(maxX, minY)
+                boxLines[3].From = Vector2.new(maxX, minY)
+                boxLines[3].To = Vector2.new(maxX, minY + height*0.25)
+                boxLines[4].From = Vector2.new(maxX, maxY - height*0.25)
+                boxLines[4].To = Vector2.new(maxX, maxY)
+                boxLines[5].From = Vector2.new(maxX, maxY)
+                boxLines[5].To = Vector2.new(maxX - width*0.25, maxY)
+                boxLines[6].From = Vector2.new(minX + width*0.25, maxY)
+                boxLines[6].To = Vector2.new(minX, maxY)
+                boxLines[7].From = Vector2.new(minX, maxY)
+                boxLines[7].To = Vector2.new(minX, maxY - height*0.25)
+                boxLines[8].From = Vector2.new(minX, minY + height*0.25)
+                boxLines[8].To = Vector2.new(minX, minY)
+                
+                for _, line in ipairs(boxLines) do line.Visible = true end
+            end
+            
+            local hpPercent = humanoid.Health / humanoid.MaxHealth
+            local barHeight = height * hpPercent
+            hpBar.From = Vector2.new(maxX + 3, maxY)
+            hpBar.To = Vector2.new(maxX + 3, maxY - barHeight)
+            hpBar.Color = hpPercent > 0.5 and Color3.fromRGB(0, 255, 0) or hpPercent > 0.25 and Color3.fromRGB(255, 165, 0) or Color3.fromRGB(255, 0, 0)
+            hpBar.Visible = true
+            
+            hpText.Text = math.floor(humanoid.Health)
+            hpText.Position = Vector2.new(maxX + 25, maxY)
+            hpText.Visible = true
+            
+            nameText.Text = player.Name
+            nameText.Position = Vector2.new(minX + width/2, minY - 15)
+            nameText.Visible = true
         end
     end)
     
@@ -260,7 +293,7 @@ function createPlayerESP(player)
         clearESP(player)
     end)
     
-    espConnections[player] = {conn1, conn2, box, hpBar, hpText, nameText}
+    espConnections[player] = {conn1, conn2, unpack(boxLines), hpBar, hpText, nameText}
 end
 
 function clearESP(player)
@@ -282,22 +315,16 @@ function toggleESP()
     
     if settings.espEnabled then
         for _, p in ipairs(Players:GetPlayers()) do
-            if p ~= LocalPlayer then
-                createPlayerESP(p)
-            end
+            if p ~= LocalPlayer then createPlayerESP(p) end
         end
-        
         Players.PlayerAdded:Connect(function(p)
             createPlayerESP(p)
         end)
     else
-        for p, _ in pairs(espConnections) do
-            clearESP(p)
-        end
+        for p, _ in pairs(espConnections) do clearESP(p) end
     end
 end
 
--- Main loops
 RunService.Heartbeat:Connect(function()
     if settings.enabled and currentTarget and currentTarget.Character then
         local humanoid = currentTarget.Character:FindFirstChildOfClass("Humanoid")
