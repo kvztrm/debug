@@ -1,7 +1,8 @@
--- External-style Aimbot with Target GUI
+-- CS2-Style Aimbot
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
+local TweenService = game:GetService("TweenService")
 local LocalPlayer = Players.LocalPlayer
 local Camera = workspace.CurrentCamera
 local Mouse = LocalPlayer:GetMouse()
@@ -9,72 +10,96 @@ local Mouse = LocalPlayer:GetMouse()
 -- Settings
 local settings = {
     enabled = false,
-    fov = 100,
+    fov = 80,
     aimKey = Enum.KeyCode.Q,
-    aimPart = "Head"
+    aimPart = "Head",
+    smoothing = 0.1, -- CS2-like smooth aim
+    closestToMouse = false
 }
 
 local currentTarget = nil
+local targetHealth = 100
 
--- Create Target GUI
+-- Create CS2-style Target Info GUI
 local screenGui = Instance.new("ScreenGui")
-screenGui.Name = "AimbotGUI"
+screenGui.Name = "CS2AimbotGUI"
 screenGui.IgnoreGuiInset = true
 screenGui.Parent = game.CoreGui
 
-local targetFrame = Instance.new("Frame")
-targetFrame.Size = UDim2.new(0, 200, 0, 60)
-targetFrame.Position = UDim2.new(0.5, -100, 0, 20)
-targetFrame.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
-targetFrame.BorderColor3 = Color3.fromRGB(0, 150, 255)
-targetFrame.BorderSizePixel = 2
-targetFrame.Parent = screenGui
-targetFrame.Visible = false
-
-local avatarImage = Instance.new("ImageLabel")
-avatarImage.Size = UDim2.new(0, 50, 0, 50)
-avatarImage.Position = UDim2.new(0, 5, 0.5, -25)
-avatarImage.BackgroundColor3 = Color3.fromRGB(50, 50, 50)
-avatarImage.BorderSizePixel = 0
-avatarImage.Parent = targetFrame
-
-local targetName = Instance.new("TextLabel")
-targetName.Size = UDim2.new(0, 140, 0, 25)
-targetName.Position = UDim2.new(0, 60, 0.5, -25)
-targetName.BackgroundTransparency = 1
-targetName.TextColor3 = Color3.fromRGB(255, 255, 255)
-targetName.Font = Enum.Font.GothamBold
-targetName.TextSize = 18
-targetName.TextXAlignment = Enum.TextXAlignment.Left
-targetName.Parent = targetFrame
-
-local targetStatus = Instance.new("TextLabel")
-targetStatus.Size = UDim2.new(0, 140, 0, 20)
-targetStatus.Position = UDim2.new(0, 60, 0.5, 5)
-targetStatus.BackgroundTransparency = 1
-targetStatus.TextColor3 = Color3.fromRGB(0, 200, 100)
-targetStatus.Font = Enum.Font.Gotham
-targetStatus.TextSize = 14
-targetStatus.TextXAlignment = Enum.TextXAlignment.Left
-targetStatus.Text = "LOCKED"
-targetStatus.Parent = targetFrame
-
-function updateTargetGUI(player)
-    if player then
-        targetFrame.Visible = true
-        targetName.Text = player.Name
-        avatarImage.Image = game.Players:GetUserThumbnailAsync(player.UserId, Enum.ThumbnailType.HeadShot, Enum.ThumbnailSize.Size100x100)
-    else
-        targetFrame.Visible = false
-    end
-end
-
--- FOV Circle
+-- FOV Circle (CS2 style - thin green line)
 local fovCircle = Drawing.new("Circle")
-fovCircle.Thickness = 2
+fovCircle.Thickness = 1
 fovCircle.NumSides = 64
 fovCircle.Filled = false
-fovCircle.Color = Color3.fromRGB(0, 255, 0)
+fovCircle.Color = Color3.fromRGB(0, 255, 100)
+
+-- Target Info Box (appears when locked)
+local targetInfo = Instance.new("Frame")
+targetInfo.Size = UDim2.new(0, 180, 0, 50)
+targetInfo.Position = UDim2.new(0.5, -90, 0, 50)
+targetInfo.BackgroundColor3 = Color3.fromRGB(20, 20, 25)
+targetInfo.BackgroundTransparency = 0.3
+targetInfo.BorderColor3 = Color3.fromRGB(0, 255, 100)
+targetInfo.BorderSizePixel = 1
+targetInfo.Parent = screenGui
+targetInfo.Visible = false
+
+local targetAvatar = Instance.new("ImageLabel")
+targetAvatar.Size = UDim2.new(0, 40, 0, 40)
+targetAvatar.Position = UDim2.new(0, 5, 0.5, -20)
+targetAvatar.BackgroundColor3 = Color3.fromRGB(40, 40, 45)
+targetAvatar.BorderSizePixel = 0
+targetAvatar.Parent = targetInfo
+
+local targetNameLabel = Instance.new("TextLabel")
+targetNameLabel.Size = UDim2.new(0, 100, 0, 20)
+targetNameLabel.Position = UDim2.new(0, 50, 0, 5)
+targetNameLabel.BackgroundTransparency = 1
+targetNameLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+targetNameLabel.Font = Enum.Font.Code
+targetNameLabel.TextSize = 14
+targetNameLabel.TextXAlignment = Enum.TextXAlignment.Left
+targetNameLabel.Text = "Target: None"
+targetNameLabel.Parent = targetInfo
+
+local healthBarBg = Instance.new("Frame")
+healthBarBg.Size = UDim2.new(0, 120, 0, 8)
+healthBarBg.Position = UDim2.new(0, 50, 0, 28)
+healthBarBg.BackgroundColor3 = Color3.fromRGB(60, 20, 20)
+healthBarBg.BorderSizePixel = 0
+healthBarBg.Parent = targetInfo
+
+local healthBar = Instance.new("Frame")
+healthBar.Size = UDim2.new(1, 0, 1, 0)
+healthBar.BackgroundColor3 = Color3.fromRGB(0, 200, 100)
+healthBar.BorderSizePixel = 0
+healthBar.Parent = healthBarBg
+
+local healthText = Instance.new("TextLabel")
+healthText.Size = UDim2.new(0, 120, 0, 15)
+healthText.Position = UDim2.new(0, 50, 0, 37)
+healthText.BackgroundTransparency = 1
+healthText.TextColor3 = Color3.fromRGB(0, 255, 100)
+healthText.Font = Enum.Font.Code
+healthText.TextSize = 11
+healthText.TextXAlignment = Enum.TextXAlignment.Right
+healthText.Text = "100 HP"
+healthText.Parent = targetInfo
+
+function updateTargetInfo(player)
+    if player and player.Character then
+        targetInfo.Visible = true
+        targetNameLabel.Text = "Target: " .. player.Name
+        targetAvatar.Image = game.Players:GetUserThumbnailAsync(player.UserId, Enum.ThumbnailType.HeadShot, Enum.ThumbnailSize.Size60x60)
+    else
+        targetInfo.Visible = false
+        targetNameLabel.Text = "Target: None"
+        targetHealth = 100
+        healthBar.Size = UDim2.new(1, 0, 1, 0)
+        healthText.Text = "0 HP"
+        healthText.TextColor3 = Color3.fromRGB(255, 50, 50)
+    end
+end
 
 function getScreenSize()
     return workspace.CurrentCamera.ViewportSize
@@ -108,58 +133,117 @@ function findTarget()
     return closestPlayer
 end
 
-function instantAim(target)
+function aimAt(target)
     if not target or not target.Character then return end
     local part = target.Character:FindFirstChild(settings.aimPart) or target.Character:FindFirstChild("HumanoidRootPart")
     if not part then return end
-    Camera.CFrame = CFrame.new(Camera.CFrame.Position, part.Position)
-    Mouse.Hit = CFrame.new(part.Position)
+    
+    local targetPos = part.Position
+    local currentCFrame = Camera.CFrame
+    local targetCFrame = CFrame.new(currentCFrame.Position, targetPos)
+    
+    -- CS2-style smooth aim
+    local tweenInfo = TweenInfo.new(settings.smoothing, Enum.EasingStyle.Linear, Enum.EasingDirection.Out)
+    TweenService:Create(Camera, tweenInfo, {CFrame = targetCFrame}):Play()
+    
+    Mouse.Hit = CFrame.new(targetPos)
 end
 
--- Fast update loop
+-- Monitor target health and switch when dead
+RunService.Heartbeat:Connect(function()
+    if settings.enabled and currentTarget and currentTarget.Character then
+        local humanoid = currentTarget.Character:FindFirstChildOfClass("Humanoid")
+        if humanoid then
+            local currentHP = humanoid.Health
+            local maxHP = humanoid.MaxHealth
+            
+            -- Update health display
+            targetHealth = currentHP
+            local hpPercent = math.clamp(currentHP / maxHP, 0, 1)
+            healthBar.Size = UDim2.new(hpPercent, 0, 1, 0)
+            healthText.Text = math.floor(currentHP) .. " HP"
+            
+            -- Color based on HP
+            if currentHP > 75 then
+                healthBar.BackgroundColor3 = Color3.fromRGB(0, 200, 100)
+                healthText.TextColor3 = Color3.fromRGB(0, 255, 100)
+            elseif currentHP > 50 then
+                healthBar.BackgroundColor3 = Color3.fromRGB(255, 200, 0)
+                healthText.TextColor3 = Color3.fromRGB(255, 200, 0)
+            elseif currentHP > 25 then
+                healthBar.BackgroundColor3 = Color3.fromRGB(255, 100, 0)
+                healthText.TextColor3 = Color3.fromRGB(255, 100, 0)
+            else
+                healthBar.BackgroundColor3 = Color3.fromRGB(200, 50, 50)
+                healthText.TextColor3 = Color3.fromRGB(255, 50, 50)
+            end
+            
+            -- Switch to new target when current one dies
+            if currentHP <= 0 then
+                currentTarget = findTarget()
+                updateTargetInfo(currentTarget)
+            end
+        end
+    end
+end)
+
+-- Main aim loop
 RunService.RenderStepped:Connect(function()
     local screenCenter = getScreenSize() / 2
+    
     if settings.enabled then
         fovCircle.Position = screenCenter
         fovCircle.Radius = settings.fov
         fovCircle.Visible = true
-        currentTarget = findTarget()
+        
+        -- Find new target if current is invalid
+        if not currentTarget or not currentTarget.Character then
+            currentTarget = findTarget()
+            updateTargetInfo(currentTarget)
+        end
+        
+        -- Continue aiming at current target
         if currentTarget then
-            instantAim(currentTarget)
-            updateTargetGUI(currentTarget)
-        else
-            updateTargetGUI(nil)
+            aimAt(currentTarget)
         end
     else
         fovCircle.Visible = false
+        targetInfo.Visible = false
         currentTarget = nil
-        updateTargetGUI(nil)
     end
 end)
 
--- Extra fast updates
-RunService.Heartbeat:Connect(function()
-    if settings.enabled and currentTarget then
-        instantAim(currentTarget)
-    end
-end)
-
+-- Controls
 UserInputService.InputBegan:Connect(function(input)
     if input.KeyCode == settings.aimKey and input.UserInputType == Enum.UserInputType.Keyboard then
         settings.enabled = not settings.enabled
-        if not settings.enabled then
+        
+        if settings.enabled then
+            currentTarget = findTarget()
+            updateTargetInfo(currentTarget)
+            if currentTarget then aimAt(currentTarget) end
+        else
             currentTarget = nil
-            updateTargetGUI(nil)
+            targetInfo.Visible = false
         end
     end
     
     if input.KeyCode == Enum.KeyCode.E and settings.enabled then
         settings.aimPart = settings.aimPart == "Head" and "HumanoidRootPart" or "Head"
     end
+    
+    -- Adjust FOV with +/- keys
+    if input.KeyCode == Enum.KeyCode.Equals and settings.enabled then
+        settings.fov = math.min(settings.fov + 5, 200)
+    end
+    if input.KeyCode == Enum.KeyCode.Minus and settings.enabled then
+        settings.fov = math.max(settings.fov - 5, 20)
+    end
 end)
 
+-- Notification
 game.StarterGui:SetCore("SendNotification", {
-    Title = "Aimbot Loaded",
-    Text = "Q: Toggle | E: Switch Part",
+    Title = "CS2 Aimbot Loaded",
+    Text = "Q: Toggle | E: Switch Part | +/-: FOV",
     Duration = 5
 })
