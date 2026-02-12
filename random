@@ -1,4 +1,4 @@
--- CS2-Style Aimbot with ESP
+-- Simple Box ESP (Matcha-style)
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
@@ -21,12 +21,12 @@ local settings = {
 }
 
 local currentTarget = nil
-local targetHealth = 100
+local espDrawings = {}
 local espConnections = {}
 
 -- GUI Setup
 local screenGui = Instance.new("ScreenGui")
-screenGui.Name = "CS2AimbotGUI"
+screenGui.Name = "SimpleESP"
 screenGui.IgnoreGuiInset = true
 screenGui.Parent = game.CoreGui
 
@@ -46,28 +46,20 @@ targetInfo.BorderSizePixel = 1
 targetInfo.Parent = screenGui
 targetInfo.Visible = false
 
-local targetAvatar = Instance.new("ImageLabel")
-targetAvatar.Size = UDim2.new(0, 40, 0, 40)
-targetAvatar.Position = UDim2.new(0, 5, 0.5, -20)
-targetAvatar.BackgroundColor3 = Color3.fromRGB(40, 40, 45)
-targetAvatar.BorderSizePixel = 0
-targetAvatar.Parent = targetInfo
-
 local targetNameLabel = Instance.new("TextLabel")
-targetNameLabel.Size = UDim2.new(0, 100, 0, 20)
-targetNameLabel.Position = UDim2.new(0, 50, 0, 5)
+targetNameLabel.Size = UDim2.new(0, 170, 0, 20)
+targetNameLabel.Position = UDim2.new(0, 5, 0, 5)
 targetNameLabel.BackgroundTransparency = 1
 targetNameLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
-targetNameLabel.Font = Enum.Font.Code
+targetNameLabel.Font = Enum.Font.GothamBold
 targetNameLabel.TextSize = 14
-targetNameLabel.TextXAlignment = Enum.TextXAlignment.Left
 targetNameLabel.Text = "Target: None"
 targetNameLabel.Parent = targetInfo
 
 local healthBarBg = Instance.new("Frame")
-healthBarBg.Size = UDim2.new(0, 120, 0, 8)
-healthBarBg.Position = UDim2.new(0, 50, 0, 28)
-healthBarBg.BackgroundColor3 = Color3.fromRGB(60, 20, 20)
+healthBarBg.Size = UDim2.new(0, 170, 0, 6)
+healthBarBg.Position = UDim2.new(0, 5, 0, 27)
+healthBarBg.BackgroundColor3 = Color3.fromRGB(50, 50, 50)
 healthBarBg.BorderSizePixel = 0
 healthBarBg.Parent = targetInfo
 
@@ -77,31 +69,134 @@ healthBar.BackgroundColor3 = Color3.fromRGB(0, 200, 100)
 healthBar.BorderSizePixel = 0
 healthBar.Parent = healthBarBg
 
-local healthText = Instance.new("TextLabel")
-healthText.Size = UDim2.new(0, 120, 0, 15)
-healthText.Position = UDim2.new(0, 50, 0, 37)
-healthText.BackgroundTransparency = 1
-healthText.TextColor3 = Color3.fromRGB(0, 255, 100)
-healthText.Font = Enum.Font.Code
-healthText.TextSize = 11
-healthText.TextXAlignment = Enum.TextXAlignment.Right
-healthText.Text = "100 HP"
-healthText.Parent = targetInfo
+function worldToScreen(worldPoint)
+    local screenPos, onScreen = Camera:WorldToViewportPoint(worldPoint)
+    return Vector2.new(screenPos.X, screenPos.Y), onScreen
+end
 
-function updateTargetInfo(player)
-    if player and player.Character then
-        targetInfo.Visible = true
-        targetNameLabel.Text = "Target: " .. player.Name
-        targetAvatar.Image = game.Players:GetUserThumbnailAsync(player.UserId, Enum.ThumbnailType.HeadShot, Enum.ThumbnailSize.Size60x60)
-    else
-        targetInfo.Visible = false
-        targetNameLabel.Text = "Target: None"
-        targetHealth = 100
-        healthBar.Size = UDim2.new(1, 0, 1, 0)
-        healthText.Text = "0 HP"
+-- Simple ESP per player
+function createPlayerESP(player)
+    clearPlayerESP(player)
+    
+    local box = Drawing.new("Square")
+    box.Thickness = 1
+    box.Color = Color3.fromRGB(255, 50, 50)
+    box.Filled = false
+    box.Visible = false
+    
+    local hpLine = Drawing.new("Line")
+    hpLine.Thickness = 2
+    hpLine.Color = Color3.fromRGB(0, 255, 0)
+    hpLine.Visible = false
+    
+    local name = Drawing.new("Text")
+    name.Size = 12
+    name.Color = Color3.fromRGB(255, 255, 255)
+    name.Center = true
+    name.Outline = true
+    name.Visible = false
+    
+    local hpText = Drawing.new("Text")
+    hpText.Size = 11
+    hpText.Color = Color3.fromRGB(255, 255, 255)
+    hpText.Center = true
+    hpText.Outline = true
+    hpText.Visible = false
+    
+    local conn = RunService.RenderStepped:Connect(function()
+        if not settings.espEnabled or not player.Character then
+            box.Visible = false
+            hpLine.Visible = false
+            name.Visible = false
+            hpText.Visible = false
+            return
+        end
+        
+        local humanoid = player.Character:FindFirstChildOfClass("Humanoid")
+        local rootPart = player.Character:FindFirstChild("HumanoidRootPart")
+        local head = player.Character:FindFirstChild("Head")
+        
+        if not humanoid or not rootPart or not head then return end
+        
+        -- Get screen positions
+        local headPos, headOnScreen = worldToScreen(head.Position)
+        local rootPos, rootOnScreen = worldToScreen(rootPart.Position)
+        
+        if not headOnScreen or not rootOnScreen then
+            box.Visible = false
+            hpLine.Visible = false
+            name.Visible = false
+            hpText.Visible = false
+            return
+        end
+        
+        -- Calculate box dimensions
+        local height = math.abs(rootPos.Y - headPos.Y)
+        local width = height * 0.6
+        local centerX = (headPos.X + rootPos.X) / 2
+        local topY = headPos.Y
+        local bottomY = rootPos.Y
+        
+        -- Draw box
+        box.Size = Vector2.new(width, height)
+        box.Position = Vector2.new(centerX - width/2, topY)
+        box.Visible = true
+        
+        -- Health bar
+        local hpPercent = humanoid.Health / humanoid.MaxHealth
+        local barWidth = width * hpPercent
+        
+        hpLine.From = Vector2.new(centerX - width/2 - 3, bottomY)
+        hpLine.To = Vector2.new(centerX - width/2 - 3, bottomY - height * hpPercent)
+        hpLine.Color = hpPercent > 0.5 and Color3.fromRGB(0, 255, 0) or hpPercent > 0.25 and Color3.fromRGB(255, 200, 0) or Color3.fromRGB(255, 0, 0)
+        hpLine.Visible = true
+        
+        -- Name
+        name.Text = player.Name
+        name.Position = Vector2.new(centerX, topY - 14)
+        name.Visible = true
+        
+        -- HP text
+        hpText.Text = math.floor(humanoid.Health)
+        hpText.Position = Vector2.new(centerX + width/2 + 5, bottomY)
+        hpText.Visible = true
+    end)
+    
+    espDrawings[player] = {conn, box, hpLine, name, hpText}
+end
+
+function clearPlayerESP(player)
+    if espDrawings[player] then
+        for _, obj in ipairs(espDrawings[player]) do
+            if typeof(obj) == "RBXScriptConnection" then obj:Disconnect()
+            elseif obj.Visible ~= nil then obj.Visible = false end
+        end
+        espDrawings[player] = nil
     end
 end
 
+function clearAllESP()
+    for player, _ in pairs(espDrawings) do
+        clearPlayerESP(player)
+    end
+end
+
+function toggleESP()
+    settings.espEnabled = not settings.espEnabled
+    
+    if settings.espEnabled then
+        for _, p in ipairs(Players:GetPlayers()) do
+            if p ~= LocalPlayer then createPlayerESP(p) end
+        end
+        Players.PlayerAdded:Connect(function(p)
+            createPlayerESP(p)
+        end)
+    else
+        clearAllESP()
+    end
+end
+
+-- Aimbot functions
 function isSameTeam(player)
     if not settings.teamCheck then return false end
     local myTeam = LocalPlayer.Team
@@ -109,7 +204,6 @@ function isSameTeam(player)
     return player.Team == myTeam
 end
 
--- Improved wall check using GetPartsObscuringTarget
 function isVisible(targetPart)
     if not settings.wallCheck then return true end
     if not targetPart or not targetPart.Parent then return false end
@@ -122,11 +216,6 @@ end
 
 function getScreenSize()
     return workspace.CurrentCamera.ViewportSize
-end
-
-function worldToScreen(worldPoint)
-    local screenPos, onScreen = Camera:WorldToViewportPoint(worldPoint)
-    return Vector2.new(screenPos.X, screenPos.Y), onScreen
 end
 
 function findClosestToCrosshair()
@@ -149,7 +238,7 @@ function findClosestToCrosshair()
             end
         end
     end
-    return closestPlayer, closestDistance
+    return closestPlayer
 end
 
 function aimAt(target)
@@ -166,165 +255,7 @@ function aimAt(target)
     Mouse.Hit = CFrame.new(targetPos)
 end
 
--- ESP Functions
-function createPlayerESP(player)
-    clearESP(player)
-    
-    local conn1, conn2
-    
-    local boxLines = {}
-    for i = 1, 12 do
-        local line = Drawing.new("Line")
-        line.Thickness = 1
-        line.Color = Color3.fromRGB(255, 50, 50)
-        line.Visible = false
-        table.insert(boxLines, line)
-    end
-    
-    local hpBar = Drawing.new("Line")
-    hpBar.Thickness = 2
-    hpBar.Color = Color3.fromRGB(0, 255, 0)
-    hpBar.Visible = false
-    
-    local hpText = Drawing.new("Text")
-    hpText.Size = 12
-    hpText.Color = Color3.fromRGB(255, 255, 255)
-    hpText.Center = true
-    hpText.Visible = false
-    
-    local nameText = Drawing.new("Text")
-    nameText.Size = 12
-    nameText.Color = Color3.fromRGB(255, 255, 255)
-    nameText.Center = true
-    nameText.Visible = false
-    
-    conn1 = RunService.RenderStepped:Connect(function()
-        if not settings.espEnabled or not player.Character then
-            for _, line in ipairs(boxLines) do line.Visible = false end
-            hpBar.Visible = false
-            hpText.Visible = false
-            nameText.Visible = false
-            return
-        end
-        
-        local humanoid = player.Character:FindFirstChildOfClass("Humanoid")
-        local rootPart = player.Character:FindFirstChild("HumanoidRootPart")
-        local head = player.Character:FindFirstChild("Head")
-        
-        if not humanoid or not rootPart or not head then return end
-        
-        -- Calculate box from actual player dimensions
-        local offset = 1.5
-        local corners = {
-            Vector3.new(-offset, 0, -offset),
-            Vector3.new(offset, 0, -offset),
-            Vector3.new(offset, 0, offset),
-            Vector3.new(-offset, 0, offset),
-            Vector3.new(-offset, humanoid.Height, -offset),
-            Vector3.new(offset, humanoid.Height, -offset),
-            Vector3.new(offset, humanoid.Height, offset),
-            Vector3.new(-offset, humanoid.Height, offset)
-        }
-        
-        local cframe = rootPart.CFrame
-        local screenPoints = {}
-        
-        for _, corner in ipairs(corners) do
-            local worldPos = cframe:PointToWorldSpace(corner)
-            local screenPos, onScreen = worldToScreen(worldPos)
-            if onScreen then
-                table.insert(screenPoints, screenPos)
-            end
-        end
-        
-        if #screenPoints >= 8 then
-            local minX, maxX = math.huge, -math.huge
-            local minY, maxY = math.huge, -math.huge
-            
-            for _, pt in ipairs(screenPoints) do
-                minX = math.min(minX, pt.X)
-                maxX = math.max(maxX, pt.X)
-                minY = math.min(minY, pt.Y)
-                maxY = math.max(maxY, pt.Y)
-            end
-            
-            local width = maxX - minX
-            local height = maxY - minY
-            
-            if #boxLines >= 12 then
-                boxLines[1].From = Vector2.new(minX, minY)
-                boxLines[1].To = Vector2.new(minX + width*0.25, minY)
-                boxLines[2].From = Vector2.new(maxX - width*0.25, minY)
-                boxLines[2].To = Vector2.new(maxX, minY)
-                boxLines[3].From = Vector2.new(maxX, minY)
-                boxLines[3].To = Vector2.new(maxX, minY + height*0.25)
-                boxLines[4].From = Vector2.new(maxX, maxY - height*0.25)
-                boxLines[4].To = Vector2.new(maxX, maxY)
-                boxLines[5].From = Vector2.new(maxX, maxY)
-                boxLines[5].To = Vector2.new(maxX - width*0.25, maxY)
-                boxLines[6].From = Vector2.new(minX + width*0.25, maxY)
-                boxLines[6].To = Vector2.new(minX, maxY)
-                boxLines[7].From = Vector2.new(minX, maxY)
-                boxLines[7].To = Vector2.new(minX, maxY - height*0.25)
-                boxLines[8].From = Vector2.new(minX, minY + height*0.25)
-                boxLines[8].To = Vector2.new(minX, minY)
-                
-                for _, line in ipairs(boxLines) do line.Visible = true end
-            end
-            
-            local hpPercent = humanoid.Health / humanoid.MaxHealth
-            local barHeight = height * hpPercent
-            hpBar.From = Vector2.new(maxX + 3, maxY)
-            hpBar.To = Vector2.new(maxX + 3, maxY - barHeight)
-            hpBar.Color = hpPercent > 0.5 and Color3.fromRGB(0, 255, 0) or hpPercent > 0.25 and Color3.fromRGB(255, 165, 0) or Color3.fromRGB(255, 0, 0)
-            hpBar.Visible = true
-            
-            hpText.Text = math.floor(humanoid.Health)
-            hpText.Position = Vector2.new(maxX + 25, maxY)
-            hpText.Visible = true
-            
-            nameText.Text = player.Name
-            nameText.Position = Vector2.new(minX + width/2, minY - 15)
-            nameText.Visible = true
-        end
-    end)
-    
-    conn2 = player.CharacterAdded:Connect(function()
-        clearESP(player)
-    end)
-    
-    espConnections[player] = {conn1, conn2, unpack(boxLines), hpBar, hpText, nameText}
-end
-
-function clearESP(player)
-    if espConnections[player] then
-        for _, obj in ipairs(espConnections[player]) do
-            if typeof(obj) == "table" then
-                for _, draw in ipairs(obj) do
-                    if draw.Visible ~= nil then draw:Remove() end
-                end
-            elseif typeof(obj) == "function" then obj:Disconnect()
-            elseif obj.Visible ~= nil then obj.Visible = false end
-        end
-        espConnections[player] = nil
-    end
-end
-
-function toggleESP()
-    settings.espEnabled = not settings.espEnabled
-    
-    if settings.espEnabled then
-        for _, p in ipairs(Players:GetPlayers()) do
-            if p ~= LocalPlayer then createPlayerESP(p) end
-        end
-        Players.PlayerAdded:Connect(function(p)
-            createPlayerESP(p)
-        end)
-    else
-        for p, _ in pairs(espConnections) do clearESP(p) end
-    end
-end
-
+-- Main loop
 RunService.Heartbeat:Connect(function()
     if settings.enabled and currentTarget and currentTarget.Character then
         local humanoid = currentTarget.Character:FindFirstChildOfClass("Humanoid")
@@ -332,19 +263,15 @@ RunService.Heartbeat:Connect(function()
             local currentHP = humanoid.Health
             local maxHP = humanoid.MaxHealth
             
-            targetHealth = currentHP
+            targetInfo.Visible = true
+            targetNameLabel.Text = "Target: " .. currentTarget.Name
+            
             local hpPercent = math.clamp(currentHP / maxHP, 0, 1)
             healthBar.Size = UDim2.new(hpPercent, 0, 1, 0)
-            healthText.Text = math.floor(currentHP) .. " HP"
-            
-            if currentHP > 75 then healthBar.BackgroundColor3 = Color3.fromRGB(0, 200, 100)
-            elseif currentHP > 50 then healthBar.BackgroundColor3 = Color3.fromRGB(255, 200, 0)
-            elseif currentHP > 25 then healthBar.BackgroundColor3 = Color3.fromRGB(255, 100, 0)
-            else healthBar.BackgroundColor3 = Color3.fromRGB(200, 50, 50) end
+            healthBar.BackgroundColor3 = hpPercent > 0.5 and Color3.fromRGB(0, 200, 100) or hpPercent > 0.25 and Color3.fromRGB(255, 200, 0) or Color3.fromRGB(200, 50, 50)
             
             if currentHP <= 0 then
                 currentTarget = findClosestToCrosshair()
-                updateTargetInfo(currentTarget)
             end
         end
     end
@@ -358,11 +285,10 @@ RunService.RenderStepped:Connect(function()
         fovCircle.Radius = settings.fov
         fovCircle.Visible = true
         
-        local newTarget, _ = findClosestToCrosshair()
+        local newTarget = findClosestToCrosshair()
         
         if newTarget and newTarget ~= currentTarget then
             currentTarget = newTarget
-            updateTargetInfo(currentTarget)
         end
         
         if currentTarget then aimAt(currentTarget) end
@@ -373,12 +299,12 @@ RunService.RenderStepped:Connect(function()
     end
 end)
 
+-- Controls
 UserInputService.InputBegan:Connect(function(input)
     if input.KeyCode == settings.aimKey and input.UserInputType == Enum.UserInputType.Keyboard then
         settings.enabled = not settings.enabled
         if settings.enabled then
             currentTarget = findClosestToCrosshair()
-            updateTargetInfo(currentTarget)
             if currentTarget then aimAt(currentTarget) end
         else
             currentTarget = nil
@@ -403,7 +329,7 @@ UserInputService.InputBegan:Connect(function(input)
 end)
 
 game.StarterGui:SetCore("SendNotification", {
-    Title = "CS2 Aimbot Loaded",
+    Title = "ESP Loaded",
     Text = "Q: Aimbot | Z: ESP | E: Part | +/-: FOV",
     Duration = 5
 })
