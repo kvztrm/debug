@@ -1,208 +1,177 @@
--- TEMP DEBUG SCRIPT - NO WEBHOOK - EXTREME LOGGING
--- Shows EVERYTHING the script sees to find the nil crash
+-- Quick Copy - Camera resets to head lock after copy
 
-print("[DEBUG MODE] Starting - no webhook will be sent")
+local Players = game:GetService("Players")
+local Workspace = game:GetService("Workspace")
+local Camera = Workspace.CurrentCamera
+local LocalPlayer = Players.LocalPlayer
 
-local RunService = game:GetService("RunService")
-
-local THRESHOLD = 50
-local MAX_INDEX = 150
-
--- Try to find folders with extra logging
-print("[STEP] Looking for FrameWork_WorkSpace...")
-local frameWork = workspace:FindFirstChild("FrameWork_WorkSpace")
-if not frameWork then
-    warn("[FATAL] FrameWork_WorkSpace not found!")
-    return
-end
-print("[FOUND] FrameWork_WorkSpace: " .. frameWork:GetFullName())
-
-print("[STEP] Looking for FishPPPart...")
-local fishPPPart = frameWork:FindFirstChild("FishPPPart")
-if not fishPPPart then
-    warn("[FATAL] FishPPPart not found!")
-    return
-end
-print("[FOUND] FishPPPart: " .. fishPPPart:GetFullName())
-
-print("[STEP] Looking for shelf parent '\232\180\167\230\158\182'...")
-local shelfParent = frameWork:FindFirstChild("\232\180\167\230\158\182")
-if not shelfParent then
-    warn("[FATAL] Shelf parent not found!")
-    return
-end
-print("[FOUND] Shelf parent: " .. shelfParent:GetFullName())
-
--- Get folders safely
-local folder1 = shelfParent:FindFirstChild("Folder1")
-local folder2 = shelfParent:FindFirstChild("Folder2")
-local folder3 = shelfParent:FindFirstChild("Folder3")
-
-print("[FOLDER CHECK] Folder1: " .. tostring(folder1))
-print("[FOLDER CHECK] Folder2: " .. tostring(folder2))
-print("[FOLDER CHECK] Folder3: " .. tostring(folder3))
-
-local folders = {}
-if folder1 then table.insert(folders, {obj = folder1, name = "Folder1"}) end
-if folder2 then table.insert(folders, {obj = folder2, name = "Folder2"}) end
-if folder3 then table.insert(folders, {obj = folder3, name = "Folder3"}) end
-
-if #folders == 0 then
-    warn("[FATAL] No valid shelf folders found!")
-    return
+-- Force camera to lock to head
+local function lockToHead()
+    local char = LocalPlayer.Character
+    if not char then return end
+    
+    local head = char:FindFirstChild("Head")
+    local hrp = char:FindFirstChild("HumanoidRootPart")
+    
+    if not head or not hrp then return end
+    
+    -- Take camera
+    Camera.CameraType = Enum.CameraType.Scriptable
+    Camera.CameraSubject = head
+    
+    -- Position behind head
+    local offset = CFrame.new(0, 2, -6)
+    Camera.CFrame = hrp.CFrame * offset
+    Camera.Focus = hrp.CFrame
+    
+    -- Switch to custom to lock
+    Camera.CameraType = Enum.CameraType.Custom
+    
+    -- Extra safety
+    pcall(function() Camera.HeadLocked = true end)
 end
 
-print("[INFO] Found " .. #folders .. " shelf folders")
-
--- Your 17 positions
-local shelfPositions = {
-    {folderIdx = 1, index = 8,   name = nil, label = "Gran Maja"},
-    {folderIdx = 1, index = nil, name = "\229\177\149\229\143\176", label = "Hammerhead"},
-    {folderIdx = 1, index = 14,  name = nil, label = "Sea Dweller"},
-    {folderIdx = 1, index = 12,  name = nil, label = "Zombie Fish"},
-    {folderIdx = 1, index = 10,  name = nil, label = "King Squid"},
-    {folderIdx = 1, index = 15,  name = nil, label = "Sea Reaper"},
-    {folderIdx = 1, index = 7,   name = nil, label = "BLOOP"},
-    {folderIdx = 1, index = 6,   name = nil, label = "Julia Beast"},
-    {folderIdx = 1, index = 5,   name = nil, label = "Ningen"},
-    {folderIdx = 1, index = 3,   name = nil, label = "Plesiosaurus"},
-    {folderIdx = 1, index = nil, name = "\229\177\149\229\143\1761", label = "SCP3000"},
-    {folderIdx = 2, index = 6,   name = nil, label = "Megalodon"},
-    {folderIdx = 2, index = nil, name = "\230\158\182\229\173\144", label = "Julia Beast"},
-    {folderIdx = 3, index = 22,  name = nil, label = "Shark Girl"},
-    {folderIdx = 3, index = 21,  name = nil, label = "Shark Boy"},
-    {folderIdx = 3, index = 19,  name = nil, label = "Bone Shark"},
-    {folderIdx = 3, index = 18,  name = nil, label = "Sea Eater"},
-}
-
-print("[INFO] Defined " .. #shelfPositions .. " target positions")
-
--- Get prompt info
-local function getPromptInfo(part)
-    if not part then
-        print("[NIL] Part is nil")
-        return nil, nil
+-- Copy your character and reset camera to head
+local function copyMe()
+    Camera.CameraType = Enum.CameraType.Scriptable
+    
+    local char = LocalPlayer.Character
+    if not char then return end
+    
+    for _, part in pairs(char:GetChildren()) do
+        if part:IsA("BasePart") then
+            local clone = part:Clone()
+            clone.CFrame = clone.CFrame + Vector3.new(10, 0, 0)
+            clone.Parent = Workspace
+        end
     end
-
-    print("[CHECK PART] " .. part:GetFullName())
-
-    local prompt = part:FindFirstChild("PPPart_PP")
-    if not prompt then
-        print("[MISSING] No PPPart_PP")
-        return nil, nil
-    end
-
-    if not prompt:IsA("ProximityPrompt") then
-        print("[TYPE ERROR] PPPart_PP is not ProximityPrompt")
-        return nil, nil
-    end
-
-    local name = prompt.ObjectText or ""
-    local action = prompt.ActionText or ""
-
-    print("[PROMPT OK]")
-    print("   ObjectText: '" .. name .. "'")
-    print("   ActionText: '" .. action .. "'")
-
-    return name, action
+    
+    -- Reset camera to head lock
+    task.delay(0.03, lockToHead)
 end
 
--- Parse percentage
-local function extractPercentage(name, action)
-    local text = (name or "") .. " " .. (action or "")
-    if text == "" then
-        print("[PARSE] Empty text")
-        return nil
+-- Copy player by name and reset camera
+local function copyPlayer(name)
+    Camera.CameraType = Enum.CameraType.Scriptable
+    
+    local player = Players:FindFirstChild(name)
+    if not player or not player.Character then
+        lockToHead()
+        return
     end
+    
+    for _, part in pairs(player.Character:GetChildren()) do
+        if part:IsA("BasePart") then
+            local clone = part:Clone()
+            clone.Parent = Workspace
+        end
+    end
+    
+    task.delay(0.03, lockToHead)
+end
 
-    print("[PARSE] Text: " .. text:sub(1, 100) .. (text:len() > 100 and "..." or ""))
-
-    local clean = text:lower():gsub("%s+", "")
-    local patterns = {
-        "(%d+%.?%d*)%%",
-        "(%d+)%%",
-        "(%d+%.?%d*) ?percent",
-        "%%(%d+)"
-    }
-
-    for _, pat in ipairs(patterns) do
-        local numStr = clean:match(pat)
-        if numStr then
-            local v = tonumber(numStr)
-            if v then
-                print("[PARSE] Matched '" .. pat .. "' → " .. v)
-                if v >= THRESHOLD then
-                    print("[ACCEPT] " .. v .. "%")
-                    return v
-                else
-                    print("[REJECT] " .. v .. "% < " .. THRESHOLD)
+-- Copy all players and reset camera
+local function copyAll()
+    Camera.CameraType = Enum.CameraType.Scriptable
+    
+    for _, plr in pairs(Players:GetPlayers()) do
+        if plr.Character then
+            for _, part in pairs(plr.Character:GetChildren()) do
+                if part:IsA("BasePart") then
+                    local clone = part:Clone()
+                    clone.Parent = Workspace
                 end
             end
         end
     end
-
-    print("[PARSE] No valid % found")
-    return nil
+    
+    task.delay(0.03, lockToHead)
 end
 
--- Manual test scan on start
-print("[TEST SCAN] Running manual scan once...")
-
-for _, entry in ipairs(shelfPositions) do
-    print("[POSITION] " .. entry.label .. " (Folder " .. entry.folderIdx .. ")")
-
-    local folder = nil
-    if entry.folderIdx == 1 then folder = folder1 end
-    if entry.folderIdx == 2 then folder = folder2 end
-    if entry.folderIdx == 3 then folder = folder3 end
-
-    if not folder then
-        print("  → Folder missing")
-        continue
-    end
-
-    print("  Folder: " .. folder:GetFullName())
-
-    local part = nil
-    if entry.index then
-        local children = folder:GetChildren()
-        if not children then
-            print("  → GetChildren() returned nil")
-            continue
-        end
-        print("  Children count: " .. #children)
-        if #children < entry.index + 1 then
-            print("  → Index " .. entry.index .. " out of bounds")
-            continue
-        end
-        part = children[entry.index + 1]
-    elseif entry.name then
-        part = folder:FindFirstChild(entry.name)
-        if not part then
-            print("  → Named child '" .. entry.name .. "' not found")
+-- Copy map and reset camera
+local function copyMap()
+    Camera.CameraType = Enum.CameraType.Scriptable
+    
+    for _, obj in pairs(Workspace:GetChildren()) do
+        if obj:IsA("BasePart") and not obj:IsDescendantOf(Players) then
+            local clone = obj:Clone()
+            clone.Parent = Workspace
         end
     end
-
-    if not part then
-        print("  → Part not found")
-        continue
-    end
-
-    print("  Part: " .. part:GetFullName())
-
-    local name, action = getPromptInfo(part)
-    if name then
-        local percent = extractPercentage(name, action)
-        if percent then
-            print("  → DETECTED: " .. name .. " @ " .. percent .. "%")
-        else
-            print("  → No valid percentage")
-        end
-    else
-        print("  → No valid prompt")
-    end
+    
+    task.delay(0.03, lockToHead)
 end
 
-print("[TEST SCAN] Finished. Check all lines above for details.")
+-- Teleport and reset camera
+local function tpTo(pos)
+    Camera.CameraType = Enum.CameraType.Scriptable
+    
+    local char = LocalPlayer.Character
+    if char and char:FindFirstChild("HumanoidRootPart") then
+        char.HumanoidRootPart.CFrame = CFrame.new(pos)
+    end
+    
+    task.delay(0.03, lockToHead)
+end
 
-print("[DEBUG MODE] Script loaded - no webhook sent")
+-- Copy with offset and reset camera
+local function copyOffset(x, y, z)
+    Camera.CameraType = Enum.CameraType.Scriptable
+    
+    local char = LocalPlayer.Character
+    if not char then return end
+    
+    local offset = Vector3.new(x or 10, y or 0, z or 0)
+    
+    for _, part in pairs(char:GetChildren()) do
+        if part:IsA("BasePart") then
+            local clone = part:Clone()
+            clone.CFrame = clone.CFrame + offset
+            clone.Parent = Workspace
+        end
+    end
+    
+    task.delay(0.03, lockToHead)
+end
+
+-- Fix camera if stuck
+local function fixCam()
+    lockToHead()
+end
+
+-- Deep copy everything
+local function deepCopy()
+    Camera.CameraType = Enum.CameraType.Scriptable
+    
+    local char = LocalPlayer.Character
+    if not char then return end
+    
+    for _, part in pairs(char:GetChildren()) do
+        local clone = part:Clone()
+        clone.Parent = Workspace
+    end
+    
+    task.delay(0.03, lockToHead)
+end
+
+-- Usage:
+-- copyMe() - Copy yourself
+-- copyPlayer("PlayerName") - Copy specific player
+-- copyAll() - Copy all players
+-- copyMap() - Copy map
+-- tpTo(Vector3.new(0, 50, 0)) - Teleport
+-- copyOffset(20, 5, 20) - Copy with offset
+-- fixCam() - Fix camera if stuck
+-- deepCopy() - Full copy
+
+return {
+    copyMe = copyMe,
+    copyPlayer = copyPlayer,
+    copyAll = copyAll,
+    copyMap = copyMap,
+    tpTo = tpTo,
+    copyOffset = copyOffset,
+    fixCam = fixCam,
+    deepCopy = deepCopy,
+    lockToHead = lockToHead
+}
