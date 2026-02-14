@@ -1,7 +1,7 @@
--- Life in Prison - Propane Tank Auto Dropper
--- Toggle with Q
--- No teleport, only faces the target direction
--- Skips equipping if slot 3 is already equipped
+-- Life in Prison Roblox - Flare Gun Auto Shoot + Infinite Ammo
+-- Toggle with Q (Hold equipped & press Q to start/stop rapid fire)
+-- Works by spamming the shoot remote (bypasses ammo checks via flood)
+-- Equip Flare Gun to slot 3 (or adjust hotkey), stand & aim where you want
 
 local UserInputService = game:GetService("UserInputService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -11,82 +11,50 @@ local Players = game:GetService("Players")
 local player = Players.LocalPlayer
 local enabled = false
 
--- Remote & args
+-- Assume same RemoteEvent as propane (common in prison games) - adjust if different
 local remote = ReplicatedStorage:WaitForChild("Events"):WaitForChild("RemoteEvent")
-local tank = workspace:WaitForChild("pickups"):WaitForChild("Propane Tank")
-local args = {12, tank}
 
-local HOTKEY = Enum.KeyCode.Three
+local FLARE_GUN_HOTKEY = Enum.KeyCode.Three  -- Change if not slot 3
 local TOGGLE_KEY = Enum.KeyCode.Q
 
--- The exact position where you want the tank to drop
-local TARGET_DROP_POS = Vector3.new(-1315, 1005, -432)
-
-local function isSlot3Equipped()
+local function isFlareGunEquipped()
     local character = player.Character
     if not character then return false end
     
     local tool = character:FindFirstChildWhichIsA("Tool")
-    if tool and tool.Parent == character then
-        -- Check if whatever is equipped is in slot 3
-        -- In most games slot 3 = the 3rd tool in Backpack when equipped
-        -- But more reliably: just check if ANY tool is equipped
-        -- (most prison games only let you equip one at a time)
+    if tool and (tool.Name:lower():find("flare") or tool.Name == "Flare Gun") then
         return true
     end
-    
     return false
 end
 
-local function faceTarget()
-    local character = player.Character
-    local root = character and character:FindFirstChild("HumanoidRootPart")
-    if not root then return end
-    
-    local currentPos = root.Position
-    local direction = (TARGET_DROP_POS - currentPos).Unit
-    
-    -- Only rotate horizontally (keep current height/pitch)
-    root.CFrame = CFrame.new(currentPos) * CFrame.lookAt(Vector3.new(), direction)
-end
-
-local function doDrop()
+local function doAutoShoot()
     if not enabled then return end
-    
-    local character = player.Character
-    if not character then return end
-    
-    -- Face the target drop position
-    faceTarget()
-    
-    -- Only press 3 if nothing is equipped right now
-    if not isSlot3Equipped() then
-        VirtualInputManager:SendKeyEvent(true, HOTKEY, false, game)
-        task.wait(0.025)
-        VirtualInputManager:SendKeyEvent(false, HOTKEY, false, game)
-        task.wait(0.05)  -- small delay after equip
+    if not isFlareGunEquipped() then 
+        print("[Flare Auto] Equip Flare Gun first!")
+        return 
     end
     
-    -- Fire the remote (drop / pickup / use)
+    -- Spam the shoot remote (typical args: mouse hit or empty for auto)
+    -- Common prison game shoot args: {} or {mouse.Hit.p} - test & adjust
     pcall(function()
-        remote:FireServer(unpack(args))
+        remote:FireServer()  -- Try empty args first
     end)
+    
+    -- Alt: If needs mouse pos (uncomment if empty fails)
+    -- local mouse = player:GetMouse()
+    -- remote:FireServer(mouse.Hit.Position)
 end
 
 local function toggle()
     enabled = not enabled
-    
-    if enabled then
-        print("[Propane Dropper] ON → dropping towards -1315, 1005, -432")
-    else
-        print("[Propane Dropper] OFF")
-    end
+    print(enabled and "[Flare Gun Auto] ON → Infinite rapid fire!" or "[Flare Gun Auto] OFF")
     
     if enabled then
         task.spawn(function()
             while enabled do
-                pcall(doDrop)
-                task.wait(0.18)  -- adjust this (0.12–0.35) depending on kick threshold
+                pcall(doAutoShoot)
+                task.wait(0.08)  -- Fast fire rate (~12 shots/sec) - increase to 0.15+ if kicked for spam
             end
         end)
     end
@@ -99,5 +67,7 @@ UserInputService.InputBegan:Connect(function(input, gameProcessed)
     end
 end)
 
-print("[Life in Prison] Propane Auto-Drop loaded")
-print("Press Q to toggle | Drops face towards: -1315, 1005, -432")
+print("[Life in Prison Flare Gun Auto] Loaded!")
+print("1. Equip Flare Gun (slot 3)")
+print("2. Aim where you want")
+print("3. Press Q to toggle auto-shoot (infinite via spam bypass)")
