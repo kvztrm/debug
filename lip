@@ -1,134 +1,152 @@
--- Aggressive Trident Scanner
--- Put this in StarterPlayerScripts (LocalScript) or ServerScriptService (Script)
+-- Aggressive Script Scanner
+-- Looks for trident-related keywords in every script's source code
 
 local keywords = {
     "trident",
     "tridentwave",
     "tridentwavehitbox",
-    "tridentwaves",
     "trident wave",
-    "wavehitbox",
+    "trident_wave",
     -- add more variations if needed
 }
 
--- Case-insensitive search
-local function containsKeyword(text)
-    local lower = text:lower()
-    for _, kw in ipairs(keywords) do
-        if lower:find(kw:lower(), 1, true) then
-            return true, kw
+-- Make search case-insensitive
+local patterns = {}
+for _, kw in ipairs(keywords) do
+    patterns[kw] = kw:lower()
+end
+
+local function containsKeyword(source)
+    if not source or type(source) ~= "string" or #source == 0 then
+        return false
+    end
+    
+    local lowerSource = source:lower()
+    
+    for _, pattern in pairs(patterns) do
+        if lowerSource:find(pattern, 1, true) then
+            return true, pattern
         end
     end
+    
     return false
 end
 
--- Get short but useful path
-local function getScriptPath(obj)
-    local path = {}
-    local current = obj
-    while current and current ~= game do
-        table.insert(path, 1, current.Name)
-        current = current.Parent
+local function getScriptSource(scriptInstance)
+    -- Try multiple methods to get source code
+    local methods = {
+        function() return scriptInstance.Source end,
+        function() return getscriptsource and getscriptsource(scriptInstance) end,
+        function() return decompile and decompile(scriptInstance) end,
+    }
+    
+    for _, method in ipairs(methods) do
+        local success, result = pcall(method)
+        if success and type(result) == "string" and #result > 0 then
+            return result
+        end
     end
-    return table.concat(path, " → ")
+    
+    return nil
 end
 
--- Main scanning function
-local function scanScript(scriptObj)
-    if not scriptObj:IsA("LuaSourceContainer") then
-        return
-    end
+local found = {}
 
-    local success, source = pcall(function()
-        -- Try most common ways to get source
-        if getscriptsource then
-            return getscriptsource(scriptObj)
-        elseif decompile then
-            return decompile(scriptObj)
-        elseif scriptObj.Source then
-            return scriptObj.Source
-        else
-            return "-- source not readable"
-        end
-    end)
-
-    if not success or not source or source == "" then
-        print("× Could not read source:", getScriptPath(scriptObj))
-        return
-    end
-
-    local lines = {}
-    for line in (source .. "\n"):gmatch("(.-)\n") do
-        table.insert(lines, line)
-    end
-
-    local foundAny = false
-
-    for i, line in ipairs(lines) do
-        local hasKw, which = containsKeyword(line)
-        if hasKw then
-            if not foundAny then
-                print("\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-                print("MATCH FOUND in:", getScriptPath(scriptObj))
-                print("Script class:", scriptObj.ClassName)
-                print("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-                foundAny = true
+local function scanObject(obj, depth)
+    depth = depth or 0
+    
+    if depth > 25 then return end  -- prevent infinite recursion
+    
+    if obj:IsA("LuaSourceContainer") then  -- ModuleScript, Script, LocalScript
+        
+        local source = getScriptSource(obj)
+        
+        if source then
+            local hasKeyword, matched = containsKeyword(source)
+            
+            if hasKeyword then
+                table.insert(found, {
+                    name = obj:GetFullName(),
+                    class = obj.ClassName,
+                    matched_keyword = matched,
+                    source_length = #source,
+                    -- source = source  -- uncomment only if you really need it (very heavy)
+                })
+                
+                print(string.format(
+                    "[FOUND] %s  (%s)  →  keyword: %s  (length: %d)",
+                    obj:GetFullName(),
+                    obj.ClassName,
+                    matched,
+                    #source
+                ))
             end
-
-            -- Show context: line number + the line itself
-            print(string.format("[%04d]  %s", i, line))
         end
     end
-
-    if foundAny then
-        print("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
+    
+    -- Recurse into children
+    for _, child in ipairs(obj:GetChildren()) do
+        scanObject(child, depth + 1)
     end
 end
 
--- Scan everything
 local function scanAll()
-    print("Starting aggressive trident scan...")
-
-    local totalScanned = 0
-    local matchesFound = 0
-
-    -- Scan ReplicatedStorage, ServerScriptService, StarterPlayerScripts, etc.
-    local containers = {
+    print("Starting aggressive trident keyword scan...")
+    print("Keywords being searched:", table.concat(keywords, ", "))
+    print("----------------------------------------")
+    
+    found = {}
+    
+    -- Scan common places first (faster feedback)
+    local commonPlaces = {
         game:GetService("ReplicatedStorage"),
         game:GetService("ServerScriptService"),
         game:GetService("StarterPlayer").StarterPlayerScripts,
         game:GetService("StarterGui"),
-        game:GetService("Players").LocalPlayer:WaitForChild("PlayerScripts", 5),
-        game:GetService("Workspace"),
+        game:GetService("StarterPack"),
+        workspace,
         game:GetService("Lighting"),
-        game:GetService("Chat"),
+        game:GetService("Players").LocalPlayer:FindFirstChild("PlayerScripts"),
     }
-
-    for _, container in ipairs(containers) do
-        if not container then continue end
-
-        for _, obj in ipairs(container:GetDescendants()) do
-            if obj:IsA("LuaSourceContainer") then
-                totalScanned = totalScanned + 1
-                local success, err = pcall(scanScript, obj)
-                if success and err then
-                    matchesFound = matchesFound + 1
-                end
-            end
+    
+    for _, place in ipairs(commonPlaces) do
+        if place then
+            scanObject(place)
         end
     end
-
-    print("\nScan finished!")
-    print("Total scripts scanned:", totalScanned)
-    print("Scripts with matches:", matchesFound)
+    
+    -- Then scan literally everything else
+    scanObject(game)
+    
+    print("\nScan completed.")
+    print("Found " .. #found .. " scripts containing trident-related keywords.")
+    
+    if #found > 0 then
+        print("\nSummary of matches:")
+        for i, item in ipairs(found) do
+            print(string.format("%2d. %-65s  (%s)  → %s",
+                i,
+                item.name,
+                item.class,
+                item.matched_keyword
+            ))
+        end
+    end
 end
 
 -- Run the scan
 scanAll()
 
--- Optional: re-scan every few seconds (useful if scripts load late)
--- while true do
---     task.wait(6)
---     print("\nRe-scanning...")
---     scanAll()
--- end
+-- Optional: re-scan when new scripts are added
+game.DescendantAdded:Connect(function(desc)
+    if desc:IsA("LuaSourceContainer") then
+        task.spawn(function()
+            local source = getScriptSource(desc)
+            if source and containsKeyword(source) then
+                warn("[NEW MATCH] " .. desc:GetFullName())
+            end
+        end)
+    end
+end)
+
+print("Trident keyword scanner active (also watching for new scripts)")
