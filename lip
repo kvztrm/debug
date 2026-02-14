@@ -1,71 +1,120 @@
--- Life in Prison - Scan & Print All "flare", "flaregun", "gun" related objects
--- Run this LocalScript once → check Output/Console for results
+-- Workspace Anti-Cheat / Suspicious Object Scanner
+-- Scans workspace for common anti-cheat signs, monitoring scripts, protection objects, etc.
+-- Prints full paths and details to console
 
-local function scanAndPrint(keyword)
-    local lowerKeyword = keyword:lower()
-    local count = 0
-    
-    print("──────────────────────────────────────────────")
-    print("SCAN RESULTS for: '" .. keyword .. "' (case-insensitive)")
-    print("──────────────────────────────────────────────")
-    
-    -- Helper to get full path of an instance
-    local function getFullPath(inst)
-        local path = inst.Name
-        local current = inst.Parent
-        while current and current ~= game do
-            path = current.Name .. " → " .. path
-            current = current.Parent
-        end
-        if current then
-            path = current.Name .. " → " .. path
-        end
-        return path
+local Workspace = game:GetService("Workspace")
+local Players = game:GetService("Players")
+
+-- Common suspicious keywords (case-insensitive)
+local suspiciousKeywords = {
+    "anticheat", "anti", "anticheat", "exploit", "cheat", "protect", "monitor", "guard", "hook", 
+    "detection", "ban", "kick", "remote", "validate", "integrity", "tamper", "noclip", "fly", 
+    "speed", "teleport", "dex", "explorer", "synapse", "krnl", "scriptx", "visionary", "knightmare",
+    "cloud", "hash", "metatable", "hookfunction", "gethui", "coregui", "valkyrie"
+}
+
+-- Common suspicious class names or patterns
+local suspiciousClasses = {
+    "Script", "LocalScript", "ModuleScript", "BindableEvent", "BindableFunction",
+    "RemoteEvent", "RemoteFunction"  -- especially if many in workspace
+}
+
+-- Helper: Get full path of an instance
+local function getFullPath(instance)
+    local path = {}
+    local current = instance
+    while current and current ~= game do
+        table.insert(path, 1, current.Name)
+        current = current.Parent
     end
-    
-    -- Recursive scan function
-    local function scan(instance)
-        if instance:IsA("Instance") and instance.Name:lower():find(lowerKeyword) then
-            count = count + 1
-            local path = getFullPath(instance)
-            local extra = ""
-            
-            if instance:IsA("Tool") then
-                extra = " [TOOL]  Grip: " .. tostring(instance:FindFirstChild("Grip") and "Yes" or "No")
-            elseif instance:IsA("Model") then
-                extra = " [MODEL]  Parts: " .. #instance:GetChildren()
-            elseif instance:IsA("RemoteEvent") then
-                extra = " [REMOTE EVENT]"
-            end
-            
-            print(string.format(
-                "[%d]  %s  |  Class: %s  |  Parent: %s  %s",
-                count,
-                instance.Name,
-                instance.ClassName,
-                path,
-                extra
-            ))
-        end
-        
-        -- Scan children recursively
-        for _, child in ipairs(instance:GetChildren()) do
-            scan(child)
-        end
-    end
-    
-    -- Start scan from game root
-    scan(game)
-    
-    print("──────────────────────────────────────────────")
-    print("Found " .. count .. " matches containing '" .. keyword .. "'")
-    print("──────────────────────────────────────────────\n")
+    return table.concat(path, " → ")
 end
 
--- Run scans for all keywords
-scanAndPrint("flare")
-scanAndPrint("flaregun")
-scanAndPrint("gun")
+-- Helper: Check if name contains any keyword
+local function isSuspiciousName(name)
+    local lowerName = name:lower()
+    for _, kw in ipairs(suspiciousKeywords) do
+        if lowerName:find(kw) then
+            return true
+        end
+    end
+    return false
+end
 
-print("Scan complete! Check for 'Flaregun', 'Flare Gun', etc. in the results above.")
-print("Tip: Copy the full path if you need to reference it in other scripts.")
+-- Main scan function
+local function scanWorkspace()
+    print("──────────────────────────────────────────────────────────────")
+    print("WORKSPACE SCAN STARTED - Looking for potential anti-cheat / monitoring objects")
+    print("Date: " .. os.date("%Y-%m-%d %H:%M:%S"))
+    print("Player: " .. Players.LocalPlayer.Name)
+    print("──────────────────────────────────────────────────────────────")
+
+    local count = 0
+
+    local function recursiveScan(parent)
+        for _, obj in ipairs(parent:GetChildren()) do
+            local isSus = false
+            local reason = {}
+
+            -- Name-based suspicion
+            if isSuspiciousName(obj.Name) then
+                isSus = true
+                table.insert(reason, "Suspicious name keyword")
+            end
+
+            -- Class-based suspicion
+            for _, class in ipairs(suspiciousClasses) do
+                if obj:IsA(class) then
+                    table.insert(reason, "Class: " .. obj.ClassName)
+                    isSus = true
+                    break
+                end
+            end
+
+            -- Extra checks for scripts
+            if obj:IsA("BaseScript") then
+                if obj.Disabled then
+                    table.insert(reason, "Disabled script")
+                end
+                -- If you want to see source (only if not protected)
+                -- pcall(function()
+                --     if obj.Source ~= "" then
+                --         table.insert(reason, "Has source code")
+                --     end
+                -- end)
+            end
+
+            -- Print if suspicious
+            if isSus then
+                count = count + 1
+                local path = getFullPath(obj)
+                local extra = table.concat(reason, ", ")
+                print(string.format(
+                    "[%d]  %s  |  Class: %s  |  Path: %s  |  Flags: %s",
+                    count, obj.Name, obj.ClassName, path, extra
+                ))
+            end
+
+            -- Recurse deeper
+            recursiveScan(obj)
+        end
+    end
+
+    -- Start scanning from Workspace
+    recursiveScan(Workspace)
+
+    print("──────────────────────────────────────────────────────────────")
+    print("Scan finished. Found " .. count .. " potentially suspicious items.")
+    print("Note: Many legitimate objects can match (e.g. 'RemoteEvent'). Use judgment.")
+    print("Common anti-cheat signs: Scripts named 'AntiCheat', 'Monitor', 'Protect*', etc.")
+    print("──────────────────────────────────────────────────────────────\n")
+end
+
+-- Run the scan immediately
+scanWorkspace()
+
+-- Optional: Re-scan every 30 seconds (uncomment if you want continuous monitoring)
+-- while true do
+--     task.wait(30)
+--     scanWorkspace()
+-- end
