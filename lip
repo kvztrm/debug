@@ -1,67 +1,135 @@
-local module = game:GetService("ReplicatedStorage")
-    :WaitForChild("Client", 10)
-    :WaitForChild("Controllers")
-    :WaitForChild("TridentWaveController", 8)
+-- Aggressive attempt to extract ModuleScript / LocalScript source
+-- Place this in a LocalScript (StarterPlayerScripts, exploit executor, etc.)
 
-if not module or not module:IsA("ModuleScript") then
-    warn("TridentWaveController not found or not ModuleScript")
-    return
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local path = ReplicatedStorage:WaitForChild("Client", 8)
+             :WaitForChild("Controllers", 5)
+             :WaitForChild("TridentWaveController", 5)
+
+print("Attempting to extract: " .. path:GetFullName())
+
+local methods = {}
+
+-- 1. Most common legitimate way (only works if it's a ModuleScript and not protected)
+methods[1] = function()
+    if path:IsA("ModuleScript") then
+        local success, result = pcall(function()
+            return require(path)
+        end)
+        if success then
+            print("require() succeeded → but this is the returned value, not source code")
+            return false
+        end
+    end
+    return false
 end
 
--- ────────────────────────────────────────────────────────────────
---                     Very aggressive dump methods
--- ────────────────────────────────────────────────────────────────
-
--- Method A - Most people get it with this nowadays
-local s, code = pcall(function()
-    return getscriptsource and getscriptsource(module)
-        or getrawmetatable and debug.getinfo and debug.getinfo(1,"s").source
-        or decompile and decompile(module)
-        or "-- failed to get source"
-end)
-
-if s and code and code ~= "" and code ~= "-- failed to get source" then
-    warn("┌────────────────────────────── SOURCE DUMP ──────────────────────────────┐")
-    print(code)
-    warn("└──────────────────────────────────────────────────────────────────────────┘")
-    setclipboard(code)
-    print("Copied to clipboard!")
-    return
+-- 2. Try to read .Source (only works in Studio or very old unprotected games)
+methods[2] = function()
+    if path:IsA("LuaSourceContainer") then
+        local s = pcall(function()
+            return path.Source
+        end)
+        if s then
+            print("SUCCESS via .Source property!\n")
+            print(path.Source)
+            return true
+        end
+    end
+    return false
 end
 
--- Method B - second most popular fallback
-if getrenv and getrenv().require then
-    local realRequire = getrenv().require
-    getrenv().require = function(m)
-        if m == module then
-            local success, source = pcall(getscriptsource or decompile, m)
-            if success and source then
-                warn("Got source through require hook!\n")
+-- 3. getgc / getloadedmodules style dump attempt
+methods[3] = function()
+    local found = false
+    for _, v in ipairs(getgc(true)) do
+        if type(v) == "function" then
+            local source = debug.getinfo(v, "s").source
+            if source and source:find("TridentWaveController", 1, true) then
+                print("Found possible related function source:")
                 print(source)
-                setclipboard(source)
+                found = true
             end
         end
-        return realRequire(m)
     end
-    warn("require hook placed → now try to use the module somewhere")
+    return found
 end
 
--- Method C - last very desperate attempt
-for i = 1, 100 do
-    task.spawn(function()
-        pcall(function()
-            local s = getscriptsource(module)
-            if s and #s > 50 then
-                warn("FOUND THROUGH SPAM!")
-                print(s)
-                setclipboard(s)
+-- 4. Very aggressive — try to find any closure that references this module
+methods[4] = function()
+    for i = 1, 1000 do
+        local f = debug.getupvalue(i, 1)
+        if type(f) == "function" then
+            local info = debug.getinfo(f, "sl")
+            if info and info.source and info.source:find("TridentWaveController") then
+                print("Found closure referencing the module:")
+                print(info.source)
+                return true
             end
-        end)
-    end)
+        end
+    end
+    return false
 end
 
-warn("Tried everything I know... still couldn't get the source")
-warn("You can try:")
-warn("1. Different executor / updated one")
-warn("2. Use decompile() if you have it")
-warn("3. Try getscriptsource() on latest update")
+-- 5. Try getrenv / getfenv tricks (very rarely works anymore)
+methods[5] = function()
+    local env = getrenv and getrenv() or getfenv(0)
+    if env then
+        for k, v in pairs(env) do
+            if tostring(v):find("TridentWaveController") then
+                print("Found reference in environment:", k, v)
+            end
+        end
+    end
+    return false
+end
+
+-- 6. Brute force descendants + namecheck + source attempt
+methods[6] = function()
+    for _, obj in ipairs(game:GetDescendants()) do
+        if obj.Name == "TridentWaveController" or obj.Name:find("TridentWave") then
+            if obj:IsA("LuaSourceContainer") then
+                local success, src = pcall(function() return obj.Source end)
+                if success and src and #src > 10 then
+                    print("Found source via descendant brute-force:")
+                    print(src:sub(1, 800) .. "...\n(truncated)")
+                    return true
+                end
+            end
+        end
+    end
+    return false
+end
+
+-- Execution order — from most to least likely to succeed
+local order = {2, 6, 1, 3, 4, 5}
+
+print("Starting aggressive extraction attempts...\n")
+
+for i, idx in ipairs(order) do
+    print("[" .. i .. "/" .. #order .. "] Trying method " .. idx .. "...")
+    local success = methods[idx]()
+    if success then
+        print("\nSUCCESS! Extraction completed using method " .. idx)
+        break
+    end
+    task.wait(0.1)
+end
+
+if not success then
+    print("\nAll extraction methods failed.")
+    print("Most likely reasons:")
+    print("• The script is protected / bytecode only")
+    print("• FilteringEnabled + script is not replicated")
+    print("• Byfron / anti-cheat blocks source access")
+    print("• It's not a LuaSourceContainer (ModuleScript/LocalScript)")
+end
+
+-- Final desperate attempt — dump the entire object
+print("\nObject dump:")
+for k, v in pairs(getrawmetatable(path) or {}) do
+    print(tostring(k), "→", tostring(v))
+end
+for k, v in pairs(path:GetProperties() or {}) do
+    print(k, "→", tostring(v))
+end
