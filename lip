@@ -1,106 +1,71 @@
--- Life in Prison - Flare Gun Auto Shoot + Infinite Ammo
--- Toggle with Q (Equip Flare Gun first, then press Q to rapid fire)
--- Uses EXACT remote args you provided - spams to bypass ammo limits
+-- Life in Prison - Scan & Print All "flare", "flaregun", "gun" related objects
+-- Run this LocalScript once → check Output/Console for results
 
-local UserInputService = game:GetService("UserInputService")
-local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local Players = game:GetService("Players")
-local VirtualInputManager = game:GetService("VirtualInputManager")
-
-local player = Players.LocalPlayer
-local enabled = false
-
-local remote = ReplicatedStorage:WaitForChild("Events"):WaitForChild("RemoteEvent")
-local FLARE_GUN_HOTKEY = Enum.KeyCode.Three  -- Adjust if different slot
-local TOGGLE_KEY = Enum.KeyCode.Q
-
--- DYNAMIC ARGS - Updates target positions every shot (mouse aim)
-local function getFlareArgs()
-    local character = player.Character
-    if not character or not character:FindFirstChild("Flaregun") then
-        return nil
-    end
+local function scanAndPrint(keyword)
+    local lowerKeyword = keyword:lower()
+    local count = 0
     
-    local flaregun = character.Fleregun
-    local mouse = player:GetMouse()
+    print("──────────────────────────────────────────────")
+    print("SCAN RESULTS for: '" .. keyword .. "' (case-insensitive)")
+    print("──────────────────────────────────────────────")
     
-    -- Create raycast from camera to mouse for dynamic targeting
-    local camera = workspace.CurrentCamera
-    local unitRay = camera:ScreenPointToRay(mouse.X, mouse.Y)
-    local raycastParams = RaycastParams.new()
-    raycastParams.FilterType = Enum.RaycastFilterType.Blacklist
-    raycastParams.FilterDescendantsInstances = {character}
-    
-    local raycastResult = workspace:Raycast(unitRay.Origin, unitRay.Direction * 1000, raycastParams)
-    local targetPos = raycastResult and raycastResult.Position or mouse.Hit.Position
-    
-    -- Create the exact arg structure from your remote
-    return {
-        14,  -- Action ID
-        flaregun,  -- Flaregun tool
-        {
-            {
-                Vector3.new(-391.1509094238281, 1258.2742919921875, -467.2906188964844),  -- Start pos 1
-                Vector3.new(-392.9195251464844, 1257.3670654296875, -468.2430114746094),  -- End pos 1  
-                targetPos  -- Dynamic target (mouse aim) - replaces 3rd vector
-            }
-        },
-        {
-            16743519,
-            4141181954,
-            8585258
-        }
-    }
-end
-
-local function isFlareGunEquipped()
-    local character = player.Character
-    return character and character:FindFirstChild("Flaregun")
-end
-
-local function doAutoShoot()
-    if not enabled or not isFlareGunEquipped() then return end
-    
-    local args = getFlareArgs()
-    if args then
-        pcall(function()
-            remote:FireServer(unpack(args))
-        end)
-    end
-end
-
-local function toggle()
-    enabled = not enabled
-    if enabled then
-        if not isFlareGunEquipped() then
-            print("[Flare Auto] EQUIP FLARE GUN FIRST!")
-            enabled = false
-            return
+    -- Helper to get full path of an instance
+    local function getFullPath(inst)
+        local path = inst.Name
+        local current = inst.Parent
+        while current and current ~= game do
+            path = current.Name .. " → " .. path
+            current = current.Parent
         end
-        print("[Flare Gun Auto] ON → Rapid fire at mouse! (Infinite ammo)")
-    else
-        print("[Flare Gun Auto] OFF")
+        if current then
+            path = current.Name .. " → " .. path
+        end
+        return path
     end
     
-    if enabled then
-        task.spawn(function()
-            while enabled do
-                pcall(doAutoShoot)
-                task.wait(0.09)  -- ~11 shots/sec - adjust 0.12-0.2 if kicked
+    -- Recursive scan function
+    local function scan(instance)
+        if instance:IsA("Instance") and instance.Name:lower():find(lowerKeyword) then
+            count = count + 1
+            local path = getFullPath(instance)
+            local extra = ""
+            
+            if instance:IsA("Tool") then
+                extra = " [TOOL]  Grip: " .. tostring(instance:FindFirstChild("Grip") and "Yes" or "No")
+            elseif instance:IsA("Model") then
+                extra = " [MODEL]  Parts: " .. #instance:GetChildren()
+            elseif instance:IsA("RemoteEvent") then
+                extra = " [REMOTE EVENT]"
             end
-        end)
+            
+            print(string.format(
+                "[%d]  %s  |  Class: %s  |  Parent: %s  %s",
+                count,
+                instance.Name,
+                instance.ClassName,
+                path,
+                extra
+            ))
+        end
+        
+        -- Scan children recursively
+        for _, child in ipairs(instance:GetChildren()) do
+            scan(child)
+        end
     end
+    
+    -- Start scan from game root
+    scan(game)
+    
+    print("──────────────────────────────────────────────")
+    print("Found " .. count .. " matches containing '" .. keyword .. "'")
+    print("──────────────────────────────────────────────\n")
 end
 
-UserInputService.InputBegan:Connect(function(input, gameProcessed)
-    if gameProcessed then return end
-    if input.KeyCode == TOGGLE_KEY then
-        toggle()
-    end
-end)
+-- Run scans for all keywords
+scanAndPrint("flare")
+scanAndPrint("flaregun")
+scanAndPrint("gun")
 
-print("[Life in Prison Flare Gun Auto] Loaded!")
-print("1. Equip Flare Gun")
-print("2. AIM your mouse where you want flares to hit")
-print("3. Press Q to start infinite rapid fire")
-print("4. Q again to stop")
+print("Scan complete! Check for 'Flaregun', 'Flare Gun', etc. in the results above.")
+print("Tip: Copy the full path if you need to reference it in other scripts.")
