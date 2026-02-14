@@ -1,114 +1,67 @@
--- LocalScript (put in StarterPlayerScripts)
-local Players = game:GetService("Players")
-local UserInputService = game:GetService("UserInputService")
-local RunService = game:GetService("RunService")
+local module = game:GetService("ReplicatedStorage")
+    :WaitForChild("Client", 10)
+    :WaitForChild("Controllers")
+    :WaitForChild("TridentWaveController", 8)
 
-local player = Players.LocalPlayer
-local active = false
-local connection = nil
-local relkontas = nil
-
--- Find relkontas player
-local function findRelkontas()
-    for _, p in pairs(Players:GetPlayers()) do
-        if p.Name:lower():find("relkontas") or p.DisplayName:lower():find("relkontas") then
-            relkontas = p
-            print("Found relkontas:", p.Name)
-            return true
-        end
-    end
-    return false
+if not module or not module:IsA("ModuleScript") then
+    warn("TridentWaveController not found or not ModuleScript")
+    return
 end
 
--- Function to update hitbox CFrames to relkontas position
-local function updateHitboxes()
-    if not relkontas or not relkontas.Character or not relkontas.Character:FindFirstChild("HumanoidRootPart") then
-        return
-    end
-    
-    local targetCFrame = relkontas.Character.HumanoidRootPart.CFrame
-    
-    local count = 0
-    for _, obj in pairs(workspace:GetDescendants()) do
-        if obj.Name == "TridentWaveHitbox" and obj:IsA("BasePart") then
-            obj.CFrame = targetCFrame
-            obj.Transparency = 0.3 -- Optional: make visible
-            obj.BrickColor = BrickColor.new("Bright red") -- Optional: color it
-            count = count + 1
-        end
-    end
-    
-    if count > 0 then
-        print("Updated " .. count .. " hitboxes to relkontas CFrame")
-    end
-end
+-- ────────────────────────────────────────────────────────────────
+--                     Very aggressive dump methods
+-- ────────────────────────────────────────────────────────────────
 
--- Toggle function
-local function toggle()
-    active = not active
-    if active then
-        print("TridentWave RELKONTAS TRACKER: ON (Q to toggle, N to kill)")
-        
-        -- Find relkontas first
-        if not findRelkontas() then
-            print("WARNING: relkontas not found! Searching...")
-            -- Keep searching for relkontas
-            local searchConn
-            searchConn = Players.PlayerAdded:Connect(function(p)
-                if p.Name:lower():find("relkontas") then
-                    findRelkontas()
-                    searchConn:Disconnect()
-                end
-            end)
-        end
-        
-        -- Initial update
-        updateHitboxes()
-        
-        -- Update every frame
-        connection = RunService.Heartbeat:Connect(updateHitboxes)
-        
-    else
-        print("TridentWave RELKONTAS TRACKER: OFF")
-        if connection then
-            connection:Disconnect()
-            connection = nil
-        end
-    end
-end
-
--- Kill function
-local function kill()
-    print("KILLING TridentWaveHitbox...")
-    local count = 0
-    for _, obj in pairs(workspace:GetDescendants()) do
-        if obj.Name == "TridentWaveHitbox" then
-            obj:Destroy()
-            count = count + 1
-        end
-    end
-    print("Destroyed " .. count .. " TridentWaveHitbox")
-end
-
--- Monitor relkontas joining
-Players.PlayerAdded:Connect(function(p)
-    if active and (p.Name:lower():find("relkontas") or p.DisplayName:lower():find("relkontas")) then
-        findRelkontas()
-    end
+-- Method A - Most people get it with this nowadays
+local s, code = pcall(function()
+    return getscriptsource and getscriptsource(module)
+        or getrawmetatable and debug.getinfo and debug.getinfo(1,"s").source
+        or decompile and decompile(module)
+        or "-- failed to get source"
 end)
 
--- Input handling
-UserInputService.InputBegan:Connect(function(input, gameProcessed)
-    if gameProcessed then return end
-    
-    if input.KeyCode == Enum.KeyCode.Q then
-        toggle()
-    elseif input.KeyCode == Enum.KeyCode.N then
-        kill()
-    end
-end)
+if s and code and code ~= "" and code ~= "-- failed to get source" then
+    warn("┌────────────────────────────── SOURCE DUMP ──────────────────────────────┐")
+    print(code)
+    warn("└──────────────────────────────────────────────────────────────────────────┘")
+    setclipboard(code)
+    print("Copied to clipboard!")
+    return
+end
 
-print("Relkontas TridentWave Tracker Loaded!")
-print("Q = Toggle tracking relkontas CFrame")
-print("N = Kill all TridentWaveHitbox")
-print("Default: OFF")
+-- Method B - second most popular fallback
+if getrenv and getrenv().require then
+    local realRequire = getrenv().require
+    getrenv().require = function(m)
+        if m == module then
+            local success, source = pcall(getscriptsource or decompile, m)
+            if success and source then
+                warn("Got source through require hook!\n")
+                print(source)
+                setclipboard(source)
+            end
+        end
+        return realRequire(m)
+    end
+    warn("require hook placed → now try to use the module somewhere")
+end
+
+-- Method C - last very desperate attempt
+for i = 1, 100 do
+    task.spawn(function()
+        pcall(function()
+            local s = getscriptsource(module)
+            if s and #s > 50 then
+                warn("FOUND THROUGH SPAM!")
+                print(s)
+                setclipboard(s)
+            end
+        end)
+    end)
+end
+
+warn("Tried everything I know... still couldn't get the source")
+warn("You can try:")
+warn("1. Different executor / updated one")
+warn("2. Use decompile() if you have it")
+warn("3. Try getscriptsource() on latest update")
