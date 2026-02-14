@@ -1,60 +1,92 @@
--- Life in Prison Roblox - Flare Gun Auto Shoot + Infinite Ammo
--- Toggle with Q (Hold equipped & press Q to start/stop rapid fire)
--- Works by spamming the shoot remote (bypasses ammo checks via flood)
--- Equip Flare Gun to slot 3 (or adjust hotkey), stand & aim where you want
+-- Life in Prison - Flare Gun Auto Shoot + Infinite Ammo
+-- Toggle with Q (Equip Flare Gun first, then press Q to rapid fire)
+-- Uses EXACT remote args you provided - spams to bypass ammo limits
 
 local UserInputService = game:GetService("UserInputService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local VirtualInputManager = game:GetService("VirtualInputManager")
 local Players = game:GetService("Players")
+local VirtualInputManager = game:GetService("VirtualInputManager")
 
 local player = Players.LocalPlayer
 local enabled = false
 
--- Assume same RemoteEvent as propane (common in prison games) - adjust if different
 local remote = ReplicatedStorage:WaitForChild("Events"):WaitForChild("RemoteEvent")
-
-local FLARE_GUN_HOTKEY = Enum.KeyCode.Three  -- Change if not slot 3
+local FLARE_GUN_HOTKEY = Enum.KeyCode.Three  -- Adjust if different slot
 local TOGGLE_KEY = Enum.KeyCode.Q
+
+-- DYNAMIC ARGS - Updates target positions every shot (mouse aim)
+local function getFlareArgs()
+    local character = player.Character
+    if not character or not character:FindFirstChild("Flaregun") then
+        return nil
+    end
+    
+    local flaregun = character.Fleregun
+    local mouse = player:GetMouse()
+    
+    -- Create raycast from camera to mouse for dynamic targeting
+    local camera = workspace.CurrentCamera
+    local unitRay = camera:ScreenPointToRay(mouse.X, mouse.Y)
+    local raycastParams = RaycastParams.new()
+    raycastParams.FilterType = Enum.RaycastFilterType.Blacklist
+    raycastParams.FilterDescendantsInstances = {character}
+    
+    local raycastResult = workspace:Raycast(unitRay.Origin, unitRay.Direction * 1000, raycastParams)
+    local targetPos = raycastResult and raycastResult.Position or mouse.Hit.Position
+    
+    -- Create the exact arg structure from your remote
+    return {
+        14,  -- Action ID
+        flaregun,  -- Flaregun tool
+        {
+            {
+                Vector3.new(-391.1509094238281, 1258.2742919921875, -467.2906188964844),  -- Start pos 1
+                Vector3.new(-392.9195251464844, 1257.3670654296875, -468.2430114746094),  -- End pos 1  
+                targetPos  -- Dynamic target (mouse aim) - replaces 3rd vector
+            }
+        },
+        {
+            16743519,
+            4141181954,
+            8585258
+        }
+    }
+end
 
 local function isFlareGunEquipped()
     local character = player.Character
-    if not character then return false end
-    
-    local tool = character:FindFirstChildWhichIsA("Tool")
-    if tool and (tool.Name:lower():find("flare") or tool.Name == "Flare Gun") then
-        return true
-    end
-    return false
+    return character and character:FindFirstChild("Flaregun")
 end
 
 local function doAutoShoot()
-    if not enabled then return end
-    if not isFlareGunEquipped() then 
-        print("[Flare Auto] Equip Flare Gun first!")
-        return 
+    if not enabled or not isFlareGunEquipped() then return end
+    
+    local args = getFlareArgs()
+    if args then
+        pcall(function()
+            remote:FireServer(unpack(args))
+        end)
     end
-    
-    -- Spam the shoot remote (typical args: mouse hit or empty for auto)
-    -- Common prison game shoot args: {} or {mouse.Hit.p} - test & adjust
-    pcall(function()
-        remote:FireServer()  -- Try empty args first
-    end)
-    
-    -- Alt: If needs mouse pos (uncomment if empty fails)
-    -- local mouse = player:GetMouse()
-    -- remote:FireServer(mouse.Hit.Position)
 end
 
 local function toggle()
     enabled = not enabled
-    print(enabled and "[Flare Gun Auto] ON → Infinite rapid fire!" or "[Flare Gun Auto] OFF")
+    if enabled then
+        if not isFlareGunEquipped() then
+            print("[Flare Auto] EQUIP FLARE GUN FIRST!")
+            enabled = false
+            return
+        end
+        print("[Flare Gun Auto] ON → Rapid fire at mouse! (Infinite ammo)")
+    else
+        print("[Flare Gun Auto] OFF")
+    end
     
     if enabled then
         task.spawn(function()
             while enabled do
                 pcall(doAutoShoot)
-                task.wait(0.08)  -- Fast fire rate (~12 shots/sec) - increase to 0.15+ if kicked for spam
+                task.wait(0.09)  -- ~11 shots/sec - adjust 0.12-0.2 if kicked
             end
         end)
     end
@@ -68,6 +100,7 @@ UserInputService.InputBegan:Connect(function(input, gameProcessed)
 end)
 
 print("[Life in Prison Flare Gun Auto] Loaded!")
-print("1. Equip Flare Gun (slot 3)")
-print("2. Aim where you want")
-print("3. Press Q to toggle auto-shoot (infinite via spam bypass)")
+print("1. Equip Flare Gun")
+print("2. AIM your mouse where you want flares to hit")
+print("3. Press Q to start infinite rapid fire")
+print("4. Q again to stop")
