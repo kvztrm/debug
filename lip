@@ -1,152 +1,94 @@
--- Aggressive Script Scanner
--- Looks for trident-related keywords in every script's source code
+-- Loop Bring: Brings player "blank" to 5 studs under your torso
+-- Toggle with Q key
 
-local keywords = {
-    "trident",
-    "tridentwave",
-    "tridentwavehitbox",
-    "trident wave",
-    "trident_wave",
-    -- add more variations if needed
-}
+local Players = game:GetService("Players")
+local LocalPlayer = Players.LocalPlayer
+local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
 
--- Make search case-insensitive
-local patterns = {}
-for _, kw in ipairs(keywords) do
-    patterns[kw] = kw:lower()
-end
+local TargetPlayerName = "blank"
+local OffsetY = -5 -- 5 studs under
 
-local function containsKeyword(source)
-    if not source or type(source) ~= "string" or #source == 0 then
-        return false
-    end
-    
-    local lowerSource = source:lower()
-    
-    for _, pattern in pairs(patterns) do
-        if lowerSource:find(pattern, 1, true) then
-            return true, pattern
-        end
-    end
-    
-    return false
-end
+local Enabled = false
 
-local function getScriptSource(scriptInstance)
-    -- Try multiple methods to get source code
-    local methods = {
-        function() return scriptInstance.Source end,
-        function() return getscriptsource and getscriptsource(scriptInstance) end,
-        function() return decompile and decompile(scriptInstance) end,
-    }
-    
-    for _, method in ipairs(methods) do
-        local success, result = pcall(method)
-        if success and type(result) == "string" and #result > 0 then
-            return result
-        end
-    end
-    
-    return nil
-end
+-- GUI
+local ScreenGui = Instance.new("ScreenGui")
+ScreenGui.Name = "LoopBringBlankGUI"
+ScreenGui.Parent = game:GetService("CoreGui")
 
-local found = {}
+local Frame = Instance.new("Frame")
+Frame.Size = UDim2.new(0, 250, 0, 50)
+Frame.Position = UDim2.new(0.5, -125, 0.85, -25)
+Frame.BackgroundColor3 = Color3.new(0, 0, 0)
+Frame.BackgroundTransparency = 0.5
+Frame.BorderSizePixel = 0
+Frame.Parent = ScreenGui
 
-local function scanObject(obj, depth)
-    depth = depth or 0
-    
-    if depth > 25 then return end  -- prevent infinite recursion
-    
-    if obj:IsA("LuaSourceContainer") then  -- ModuleScript, Script, LocalScript
-        
-        local source = getScriptSource(obj)
-        
-        if source then
-            local hasKeyword, matched = containsKeyword(source)
-            
-            if hasKeyword then
-                table.insert(found, {
-                    name = obj:GetFullName(),
-                    class = obj.ClassName,
-                    matched_keyword = matched,
-                    source_length = #source,
-                    -- source = source  -- uncomment only if you really need it (very heavy)
-                })
-                
-                print(string.format(
-                    "[FOUND] %s  (%s)  →  keyword: %s  (length: %d)",
-                    obj:GetFullName(),
-                    obj.ClassName,
-                    matched,
-                    #source
-                ))
-            end
-        end
-    end
-    
-    -- Recurse into children
-    for _, child in ipairs(obj:GetChildren()) do
-        scanObject(child, depth + 1)
+local TextLabel = Instance.new("TextLabel")
+TextLabel.Size = UDim2.new(1, 0, 1, 0)
+TextLabel.BackgroundTransparency = 1
+TextLabel.Text = "LoopBring Blank: OFF (Press Q)"
+TextLabel.TextColor3 = Color3.new(1, 0, 0)
+TextLabel.TextSize = 18
+TextLabel.Font = Enum.Font.SourceSansBold
+TextLabel.Parent = Frame
+
+local function UpdateGUI()
+    if Enabled then
+        TextLabel.Text = "LoopBring Blank: ON (Press Q)"
+        TextLabel.TextColor3 = Color3.new(0, 1, 0)
+    else
+        TextLabel.Text = "LoopBring Blank: OFF (Press Q)"
+        TextLabel.TextColor3 = Color3.new(1, 0, 0)
     end
 end
 
-local function scanAll()
-    print("Starting aggressive trident keyword scan...")
-    print("Keywords being searched:", table.concat(keywords, ", "))
-    print("----------------------------------------")
+local function BringBlank()
+    if not Enabled then return end
     
-    found = {}
+    local myChar = LocalPlayer.Character
+    if not myChar then return end
     
-    -- Scan common places first (faster feedback)
-    local commonPlaces = {
-        game:GetService("ReplicatedStorage"),
-        game:GetService("ServerScriptService"),
-        game:GetService("StarterPlayer").StarterPlayerScripts,
-        game:GetService("StarterGui"),
-        game:GetService("StarterPack"),
-        workspace,
-        game:GetService("Lighting"),
-        game:GetService("Players").LocalPlayer:FindFirstChild("PlayerScripts"),
-    }
-    
-    for _, place in ipairs(commonPlaces) do
-        if place then
-            scanObject(place)
-        end
+    local myTorso = myChar:FindFirstChild("Torso")
+    if not myTorso then
+        -- Try HumanoidRootPart if Torso doesn't exist
+        myTorso = myChar:FindFirstChild("HumanoidRootPart")
     end
+    if not myTorso then return end
     
-    -- Then scan literally everything else
-    scanObject(game)
+    local targetPlayer = Players:FindFirstChild(TargetPlayerName)
+    if not targetPlayer then return end
     
-    print("\nScan completed.")
-    print("Found " .. #found .. " scripts containing trident-related keywords.")
+    local theirChar = targetPlayer.Character
+    if not theirChar then return end
     
-    if #found > 0 then
-        print("\nSummary of matches:")
-        for i, item in ipairs(found) do
-            print(string.format("%2d. %-65s  (%s)  → %s",
-                i,
-                item.name,
-                item.class,
-                item.matched_keyword
-            ))
-        end
-    end
+    local theirRoot = theirChar:FindFirstChild("HumanoidRootPart")
+    if not theirRoot then return end
+    
+    -- Bring them 5 studs under your torso
+    theirRoot.CFrame = myTorso.CFrame * CFrame.new(0, OffsetY, 0)
 end
 
--- Run the scan
-scanAll()
-
--- Optional: re-scan when new scripts are added
-game.DescendantAdded:Connect(function(desc)
-    if desc:IsA("LuaSourceContainer") then
-        task.spawn(function()
-            local source = getScriptSource(desc)
-            if source and containsKeyword(source) then
-                warn("[NEW MATCH] " .. desc:GetFullName())
-            end
-        end)
+-- Toggle with Q key
+UserInputService.InputBegan:Connect(function(input, gameProcessed)
+    if gameProcessed then return end
+    
+    if input.KeyCode == Enum.KeyCode.Q then
+        Enabled = not Enabled
+        UpdateGUI()
     end
 end)
 
-print("Trident keyword scanner active (also watching for new scripts)")
+-- Heartbeat loop - continuously bring blank
+RunService.Heartbeat:Connect(function()
+    BringBlank()
+end)
+
+-- Keep GUI visible
+task.spawn(function()
+    while task.wait(1) do
+        if ScreenGui.Parent == nil then
+            ScreenGui.Parent = game:GetService("CoreGui")
+        end
+    end
+end)
