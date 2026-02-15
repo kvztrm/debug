@@ -1,177 +1,195 @@
--- Quick Copy - Camera resets to head lock after copy
+-- Client-side only: Everyone appears in front of YOU (local visual teleport)
+-- Others don't see this movement — it's fake on your screen only
+-- Hitbox expansion also local-only (visual effect)
+-- Toggle with Q key
 
 local Players = game:GetService("Players")
-local Workspace = game:GetService("Workspace")
-local Camera = Workspace.CurrentCamera
 local LocalPlayer = Players.LocalPlayer
+local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
+local Mouse = LocalPlayer:GetMouse()
 
--- Force camera to lock to head
-local function lockToHead()
-    local char = LocalPlayer.Character
+local Exclude = {"relkonta", "1_l8q"}
+
+-- Settings
+local Settings = {
+    Enabled = false,
+    HitboxSize = 5, -- Multiplier for hitbox expansion
+    TeleportOffset = 2.5, -- studs in front
+    VInputEnabled = true
+}
+
+-- GUI for toggle indication
+local ScreenGui = Instance.new("ScreenGui")
+ScreenGui.Name = "LoopBringGUI"
+ScreenGui.Parent = game:GetService("CoreGui")
+
+local Frame = Instance.new("Frame")
+Frame.Size = UDim2.new(0, 200, 0, 50)
+Frame.Position = UDim2.new(0.5, -100, 0.8, -25)
+Frame.BackgroundColor3 = Color3.new(0, 0, 0)
+Frame.BackgroundTransparency = 0.5
+Frame.BorderSizePixel = 0
+Frame.Parent = ScreenGui
+
+local TextLabel = Instance.new("TextLabel")
+TextLabel.Size = UDim2.new(1, 0, 1, 0)
+TextLabel.BackgroundTransparency = 1
+TextLabel.Text = "LoopBring: OFF (Press Q)"
+TextLabel.TextColor3 = Color3.new(1, 0, 0)
+TextLabel.TextSize = 20
+TextLabel.Font = Enum.Font.SourceSansBold
+TextLabel.Parent = Frame
+
+local function UpdateGUI()
+    if Settings.Enabled then
+        TextLabel.Text = "LoopBring: ON (Press Q)"
+        TextLabel.TextColor3 = Color3.new(0, 1, 0)
+    else
+        TextLabel.Text = "LoopBring: OFF (Press Q)"
+        TextLabel.TextColor3 = Color3.new(1, 0, 0)
+    end
+end
+
+-- Main teleport function (local only)
+local function BringToMe(player)
+    if player == LocalPlayer then return end
+    if table.find(Exclude, player.Name) then return end
+    if not Settings.Enabled then return end
+    
+    local theirChar = player.Character
+    if not theirChar then return end
+    
+    local theirRoot = theirChar:FindFirstChild("HumanoidRootPart")
+    if not theirRoot then return end
+    
+    local myChar = LocalPlayer.Character
+    if not myChar then return end
+    
+    local myRoot = myChar:FindFirstChild("HumanoidRootPart")
+    if not myRoot then return end
+    
+    -- Only change on YOUR client (local CFrame set)
+    theirRoot.CFrame = myRoot.CFrame * CFrame.new(0, 0, -Settings.TeleportOffset)
+end
+
+-- Hitbox expansion function (local visual only)
+local function ExpandHitbox(player)
+    if player == LocalPlayer then return end
+    if table.find(Exclude, player.Name) then return end
+    if not Settings.Enabled then return end
+    
+    local char = player.Character
     if not char then return end
     
-    local head = char:FindFirstChild("Head")
-    local hrp = char:FindFirstChild("HumanoidRootPart")
+    local humanoid = char:FindFirstChild("Humanoid")
+    if not humanoid then return end
     
-    if not head or not hrp then return end
-    
-    -- Take camera
-    Camera.CameraType = Enum.CameraType.Scriptable
-    Camera.CameraSubject = head
-    
-    -- Position behind head
-    local offset = CFrame.new(0, 2, -6)
-    Camera.CFrame = hrp.CFrame * offset
-    Camera.Focus = hrp.CFrame
-    
-    -- Switch to custom to lock
-    Camera.CameraType = Enum.CameraType.Custom
-    
-    -- Extra safety
-    pcall(function() Camera.HeadLocked = true end)
+    -- Scale the humanoid (local visual effect)
+    humanoid:ScaleTo(Settings.HitboxSize)
 end
 
--- Copy your character and reset camera to head
-local function copyMe()
-    Camera.CameraType = Enum.CameraType.Scriptable
-    
-    local char = LocalPlayer.Character
+-- Reset hitbox to normal
+local function ResetHitbox(player)
+    local char = player.Character
     if not char then return end
     
-    for _, part in pairs(char:GetChildren()) do
-        if part:IsA("BasePart") then
-            local clone = part:Clone()
-            clone.CFrame = clone.CFrame + Vector3.new(10, 0, 0)
-            clone.Parent = Workspace
-        end
-    end
+    local humanoid = char:FindFirstChild("Humanoid")
+    if not humanoid then return end
     
-    -- Reset camera to head lock
-    task.delay(0.03, lockToHead)
+    humanoid:ScaleTo(1)
 end
 
--- Copy player by name and reset camera
-local function copyPlayer(name)
-    Camera.CameraType = Enum.CameraType.Scriptable
+-- VInput left mouse button simulation
+local function TriggerVInput()
+    if not Settings.Enabled or not Settings.VInputEnabled then return end
     
-    local player = Players:FindFirstChild(name)
-    if not player or not player.Character then
-        lockToHead()
-        return
-    end
+    -- Simulate left mouse button click at current mouse position
+    local mousePos = Mouse.X, Mouse.Y
     
-    for _, part in pairs(player.Character:GetChildren()) do
-        if part:IsA("BasePart") then
-            local clone = part:Clone()
-            clone.Parent = Workspace
-        end
-    end
+    -- Fire the click using mouse press/release
+    local args = {
+        [1] = "LeftClick",
+        [2] = Vector2.new(Mouse.X, Mouse.Y)
+    }
     
-    task.delay(0.03, lockToHead)
+    -- Try to fire mouse click event
+    -- This simulates a local click - works for some games
+    pcall(function()
+        -- Method 1: Use mouse press
+        local vm = game:GetService("VirtualInputManager")
+        vm:SendMouseButtonPress(Mouse.X, Mouse.Y, Enum.UserInputType.MouseButton1)
+        task.wait(0.05)
+        vm:SendMouseButtonRelease(Mouse.X, Mouse.Y, Enum.UserInputType.MouseButton1)
+    end)
 end
 
--- Copy all players and reset camera
-local function copyAll()
-    Camera.CameraType = Enum.CameraType.Scriptable
+-- Initial run: bring current players and expand hitboxes
+for _, plr in ipairs(Players:GetPlayers()) do
+    task.spawn(function()
+        pcall(BringToMe, plr)
+        pcall(ExpandHitbox, plr)
+    end)
+end
+
+-- New players
+Players.PlayerAdded:Connect(function(plr)
+    plr.CharacterAdded:Connect(function()
+        task.delay(0.5, function()
+            pcall(BringToMe, plr)
+            pcall(ExpandHitbox, plr)
+        end)
+    end)
+end)
+
+-- Players leaving - reset their hitbox
+Players.PlayerRemoving:Connect(function(plr)
+    pcall(ResetHitbox, plr)
+end)
+
+-- Toggle with Q key
+UserInputService.InputBegan:Connect(function(input, gameProcessed)
+    if gameProcessed then return end
     
-    for _, plr in pairs(Players:GetPlayers()) do
-        if plr.Character then
-            for _, part in pairs(plr.Character:GetChildren()) do
-                if part:IsA("BasePart") then
-                    local clone = part:Clone()
-                    clone.Parent = Workspace
-                end
+    if input.KeyCode == Enum.KeyCode.Q then
+        Settings.Enabled = not Settings.Enabled
+        UpdateGUI()
+        
+        if Settings.Enabled then
+            -- Enable: Apply to all current players
+            for _, plr in ipairs(Players:GetPlayers()) do
+                pcall(BringToMe, plr)
+                pcall(ExpandHitbox, plr)
+            end
+        else
+            -- Disable: Reset all hitboxes
+            for _, plr in ipairs(Players:GetPlayers()) do
+                pcall(ResetHitbox, plr)
             end
         end
     end
-    
-    task.delay(0.03, lockToHead)
-end
+end)
 
--- Copy map and reset camera
-local function copyMap()
-    Camera.CameraType = Enum.CameraType.Scriptable
-    
-    for _, obj in pairs(Workspace:GetChildren()) do
-        if obj:IsA("BasePart") and not obj:IsDescendantOf(Players) then
-            local clone = obj:Clone()
-            clone.Parent = Workspace
+-- Mouse click detection for VInput
+Mouse.Button1Down:Connect(function()
+    TriggerVInput()
+end)
+
+-- Heartbeat: Keep players in front and update hitboxes
+RunService.Heartbeat:Connect(function()
+    for _, plr in ipairs(Players:GetPlayers()) do
+        if plr ~= LocalPlayer and not table.find(Exclude, plr.Name) then
+            pcall(BringToMe, plr)
+            pcall(ExpandHitbox, plr)
         end
     end
-    
-    task.delay(0.03, lockToHead)
-end
+end)
 
--- Teleport and reset camera
-local function tpTo(pos)
-    Camera.CameraType = Enum.CameraType.Scriptable
-    
-    local char = LocalPlayer.Character
-    if char and char:FindFirstChild("HumanoidRootPart") then
-        char.HumanoidRootPart.CFrame = CFrame.new(pos)
-    end
-    
-    task.delay(0.03, lockToHead)
-end
-
--- Copy with offset and reset camera
-local function copyOffset(x, y, z)
-    Camera.CameraType = Enum.CameraType.Scriptable
-    
-    local char = LocalPlayer.Character
-    if not char then return end
-    
-    local offset = Vector3.new(x or 10, y or 0, z or 0)
-    
-    for _, part in pairs(char:GetChildren()) do
-        if part:IsA("BasePart") then
-            local clone = part:Clone()
-            clone.CFrame = clone.CFrame + offset
-            clone.Parent = Workspace
+-- Keep GUI visible
+task.spawn(function()
+    while task.wait(1) do
+        if ScreenGui.Parent == nil then
+            ScreenGui.Parent = game:GetService("CoreGui")
         end
     end
-    
-    task.delay(0.03, lockToHead)
-end
-
--- Fix camera if stuck
-local function fixCam()
-    lockToHead()
-end
-
--- Deep copy everything
-local function deepCopy()
-    Camera.CameraType = Enum.CameraType.Scriptable
-    
-    local char = LocalPlayer.Character
-    if not char then return end
-    
-    for _, part in pairs(char:GetChildren()) do
-        local clone = part:Clone()
-        clone.Parent = Workspace
-    end
-    
-    task.delay(0.03, lockToHead)
-end
-
--- Usage:
--- copyMe() - Copy yourself
--- copyPlayer("PlayerName") - Copy specific player
--- copyAll() - Copy all players
--- copyMap() - Copy map
--- tpTo(Vector3.new(0, 50, 0)) - Teleport
--- copyOffset(20, 5, 20) - Copy with offset
--- fixCam() - Fix camera if stuck
--- deepCopy() - Full copy
-
-return {
-    copyMe = copyMe,
-    copyPlayer = copyPlayer,
-    copyAll = copyAll,
-    copyMap = copyMap,
-    tpTo = tpTo,
-    copyOffset = copyOffset,
-    fixCam = fixCam,
-    deepCopy = deepCopy,
-    lockToHead = lockToHead
-}
+end)
