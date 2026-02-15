@@ -1,4 +1,4 @@
--- Simple Box ESP with Hitbox Expander
+-- Simple Box ESP (Distance-based scaling)
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
@@ -11,13 +11,9 @@ local Mouse = LocalPlayer:GetMouse()
 local settings = {
     enabled = false,
     espEnabled = false,
-    hitboxEnabled = false,
-    hitboxSize = 3,
-    hitboxTransparency = 0.5,
     fov = 80,
     aimKey = Enum.KeyCode.Q,
     espKey = Enum.KeyCode.Z,
-    hitboxKey = Enum.KeyCode.J,
     aimPart = "Head",
     smoothing = 0.05,
     wallCheck = false,
@@ -26,7 +22,6 @@ local settings = {
 
 local currentTarget = nil
 local espDrawings = {}
-local hitboxStore = {} -- Store original values
 
 -- GUI Setup
 local screenGui = Instance.new("ScreenGui")
@@ -40,7 +35,6 @@ fovCircle.NumSides = 64
 fovCircle.Filled = false
 fovCircle.Color = Color3.fromRGB(0, 255, 100)
 
--- Target Info
 local targetFrame = Instance.new("Frame")
 targetFrame.Size = UDim2.new(0, 220, 0, 70)
 targetFrame.Position = UDim2.new(0.5, -110, 0, 50)
@@ -108,78 +102,41 @@ function worldToScreen(worldPoint)
     return Vector2.new(screenPos.X, screenPos.Y), onScreen
 end
 
--- Hitbox Expander
-function expandHitboxes()
-    for _, player in ipairs(Players:GetPlayers()) do
-        if player ~= LocalPlayer and player.Character then
-            local head = player.Character:FindFirstChild("Head")
-            if head then
-                -- Store original if not stored
-                if not hitboxStore[player] then
-                    hitboxStore[player] = {
-                        headScale = head:FindFirstChild("Scale"),
-                        headTransparency = head.Transparency,
-                        headSize = head.Size
-                    }
-                end
+-- Find closest player to YOU who is inside the FOV circle
+function findTargetInFOV()
+    local screenCenter = getScreenSize() / 2
+    local myRoot = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+    if not myRoot then return nil end
+    
+    local closestPlayer = nil
+    local closestDistance = math.huge
+    
+    for _, p in ipairs(Players:GetPlayers()) do
+        if p ~= LocalPlayer and p.Character and not isSameTeam(p) then
+            local part = p.Character:FindFirstChild(settings.aimPart) or p.Character:FindFirstChild("HumanoidRootPart")
+            if part and isVisible(part) then
+                local screenPos, onScreen = worldToScreen(part.Position)
                 
-                -- Resize head
-                if head:FindFirstChild("Scale") then
-                    head.Scale.Head:Destroy()
-                    local newScale = Instance.new("FloatCurve", head.Scale)
-                    newScale.Name = "Head"
-                    newScale:InsertKeyframe(0, settings.hitboxSize)
-                end
-                
-                -- Make transparent
-                head.Transparency = settings.hitboxTransparency
-                
-                -- Also expand humanoid root part for bigger hitbox
-                local hrp = player.Character:FindFirstChild("HumanoidRootPart")
-                if hrp and not hitboxStore[player].hrp then
-                    hitboxStore[player].hrp = hrp.Size
-                    hitboxStore[player].hrpScale = hrp:FindFirstChild("Scale")
-                end
-                if hrp then
-                    hrp.Size = Vector3.new(settings.hitboxSize * 2, settings.hitboxSize * 2, settings.hitboxSize * 2)
-                    if hrp:FindFirstChild("Scale") then
-                        hrp.Scale:Destroy()
-                        local newScale = Instance.new("FloatCurve", hrp)
-                        newScale.Name = "Scale"
-                        newScale:InsertKeyframe(0, settings.hitboxSize)
+                if onScreen then
+                    local distToCenter = (screenPos - screenCenter).Magnitude
+                    
+                    if distToCenter <= settings.fov then
+                        local distToMe = (part.Position - myRoot.Position).Magnitude
+                        
+                        if distToMe < closestDistance then
+                            closestDistance = distToMe
+                            closestPlayer = p
+                        end
                     end
                 end
             end
         end
     end
+    
+    return closestPlayer
 end
 
-function resetHitboxes()
-    for _, player in ipairs(Players:GetPlayers()) do
-        if player ~= LocalPlayer and player.Character then
-            local head = player.Character:FindFirstChild("Head")
-            if head then
-                head.Transparency = 0
-                if head:FindFirstChild("Scale") and head.Scale:FindFirstChild("Head") then
-                    head.Scale.Head:Destroy()
-                end
-            end
-            
-            local hrp = player.Character:FindFirstChild("HumanoidRootPart")
-            if hrp then
-                if hitboxStore[player] and hitboxStore[player].hrp then
-                    hrp.Size = hitboxStore[player].hrp
-                end
-                if hrp:FindFirstChild("Scale") then
-                    hrp.Scale:Destroy()
-                end
-            end
-        end
-    end
-    hitboxStore = {}
-end
-
--- ESP Functions
+-- ESP with distance-based scaling
 function createPlayerESP(player)
     clearPlayerESP(player)
     
@@ -208,12 +165,20 @@ function createPlayerESP(player)
     hpNum.Outline = true
     hpNum.Visible = false
     
+    local distance = Drawing.new("Text")
+    distance.Size = 10
+    distance.Color = Color3.fromRGB(180, 180, 180)
+    distance.Center = true
+    distance.Outline = true
+    distance.Visible = false
+    
     local conn = RunService.RenderStepped:Connect(function()
         if not settings.espEnabled or not player.Character then
             box.Visible = false
             hpLine.Visible = false
             name.Visible = false
             hpNum.Visible = false
+            distance.Visible = false
             return
         end
         
@@ -231,14 +196,26 @@ function createPlayerESP(player)
             hpLine.Visible = false
             name.Visible = false
             hpNum.Visible = false
+            distance.Visible = false
             return
         end
         
-        local height = math.abs(rootPos.Y - headPos.Y) * 1.1
+        -- Calculate distance from player
+        local myRoot = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+        local distToPlayer = 0
+        if myRoot then
+            distToPlayer = math.floor((rootPart.Position - myRoot.Position).Magnitude)
+        end
+        
+        -- Scale box based on distance (closer = bigger)
+        local baseHeight = math.abs(rootPos.Y - headPos.Y)
+        local scaleFactor = math.clamp(100 / (distToPlayer + 10), 0.3, 2.5)
+        local height = baseHeight * scaleFactor
         local width = height * 0.7
+        
         local centerX = (headPos.X + rootPos.X) / 2
-        local topY = headPos.Y - height * 0.05
-        local bottomY = rootPos.Y + height * 0.05
+        local topY = headPos.Y - height * 0.05 * scaleFactor
+        local bottomY = rootPos.Y + height * 0.05 * scaleFactor
         
         box.Size = Vector2.new(width, height)
         box.Position = Vector2.new(centerX - width/2, topY)
@@ -251,15 +228,22 @@ function createPlayerESP(player)
         hpLine.Visible = true
         
         name.Text = player.Name
-        name.Position = Vector2.new(centerX, topY - 16)
+        name.Position = Vector2.new(centerX, topY - 14 * scaleFactor)
+        name.Size = math.clamp(13 * scaleFactor, 8, 20)
         name.Visible = true
         
         hpNum.Text = math.floor(humanoid.Health)
         hpNum.Position = Vector2.new(centerX + width/2 + 6, bottomY)
+        hpNum.Size = math.clamp(12 * scaleFactor, 8, 18)
         hpNum.Visible = true
+        
+        distance.Text = distToPlayer .. "m"
+        distance.Position = Vector2.new(centerX, bottomY + 3)
+        distance.Size = math.clamp(10 * scaleFactor, 6, 14)
+        distance.Visible = true
     end)
     
-    espDrawings[player] = {conn, box, hpLine, name, hpNum}
+    espDrawings[player] = {conn, box, hpLine, name, hpNum, distance}
 end
 
 function clearPlayerESP(player)
@@ -272,37 +256,18 @@ function clearPlayerESP(player)
     end
 end
 
-function clearAllESP()
-    for player, _ in pairs(espDrawings) do clearPlayerESP(player) end
-end
-
 function toggleESP()
     settings.espEnabled = not settings.espEnabled
-    
     if settings.espEnabled then
         for _, p in ipairs(Players:GetPlayers()) do
             if p ~= LocalPlayer then createPlayerESP(p) end
         end
-        Players.PlayerAdded:Connect(function(p)
-            createPlayerESP(p)
-        end)
+        Players.PlayerAdded:Connect(function(p) createPlayerESP(p) end)
     else
-        clearAllESP()
+        for player, _ in pairs(espDrawings) do clearPlayerESP(player) end
     end
 end
 
--- Hitbox toggle
-function toggleHitbox()
-    settings.hitboxEnabled = not settings.hitboxEnabled
-    
-    if settings.hitboxEnabled then
-        expandHitboxes()
-    else
-        resetHitboxes()
-    end
-end
-
--- Team check
 function getPlayerTeamInfo(player)
     local teamName = player.Team and player.Team.Name or "Neutral"
     local teamColor = player.Team and player.Team.TeamColor.Color or Color3.fromRGB(150, 150, 150)
@@ -319,38 +284,13 @@ end
 function isVisible(targetPart)
     if not settings.wallCheck then return true end
     if not targetPart or not targetPart.Parent then return false end
-    
     local ignoreList = {LocalPlayer.Character, Camera}
     local obscuringParts = Camera:GetPartsObscuringTarget({targetPart.Position}, ignoreList)
-    
     return #obscuringParts == 0
 end
 
 function getScreenSize()
     return workspace.CurrentCamera.ViewportSize
-end
-
-function findClosestToCrosshair()
-    local screenCenter = getScreenSize() / 2
-    local closestPlayer = nil
-    local closestDistance = settings.fov
-    
-    for _, p in ipairs(Players:GetPlayers()) do
-        if p ~= LocalPlayer and p.Character and not isSameTeam(p) then
-            local part = p.Character:FindFirstChild(settings.aimPart) or p.Character:FindFirstChild("HumanoidRootPart")
-            if part and isVisible(part) then
-                local screenPos, onScreen = worldToScreen(part.Position)
-                if onScreen then
-                    local distToCenter = (screenPos - screenCenter).Magnitude
-                    if distToCenter < closestDistance then
-                        closestDistance = distToCenter
-                        closestPlayer = p
-                    end
-                end
-            end
-        end
-    end
-    return closestPlayer
 end
 
 function aimAt(target)
@@ -396,10 +336,8 @@ RunService.Heartbeat:Connect(function()
             healthFill.BackgroundColor3 = hpPercent > 0.5 and Color3.fromRGB(0, 200, 100) or hpPercent > 0.25 and Color3.fromRGB(255, 200, 0) or Color3.fromRGB(200, 50, 50)
             healthText.Text = math.floor(currentHP) .. " HP"
             
-            updateTargetDisplay(currentTarget)
-            
             if currentHP <= 0 then
-                currentTarget = findClosestToCrosshair()
+                currentTarget = findTargetInFOV()
             end
         end
     end
@@ -413,7 +351,7 @@ RunService.RenderStepped:Connect(function()
         fovCircle.Radius = settings.fov
         fovCircle.Visible = true
         
-        local newTarget = findClosestToCrosshair()
+        local newTarget = findTargetInFOV()
         
         if newTarget and newTarget ~= currentTarget then
             currentTarget = newTarget
@@ -433,7 +371,7 @@ UserInputService.InputBegan:Connect(function(input)
     if input.KeyCode == settings.aimKey and input.UserInputType == Enum.UserInputType.Keyboard then
         settings.enabled = not settings.enabled
         if settings.enabled then
-            currentTarget = findClosestToCrosshair()
+            currentTarget = findTargetInFOV()
             updateTargetDisplay(currentTarget)
             if currentTarget then aimAt(currentTarget) end
         else
@@ -442,13 +380,7 @@ UserInputService.InputBegan:Connect(function(input)
         end
     end
     
-    if input.KeyCode == settings.espKey and input.UserInputType == Enum.UserInputType.Keyboard then
-        toggleESP()
-    end
-    
-    if input.KeyCode == settings.hitboxKey and input.UserInputType == Enum.UserInputType.Keyboard then
-        toggleHitbox()
-    end
+    if input.KeyCode == settings.espKey and input.UserInputType == Enum.UserInputType.Keyboard then toggleESP() end
     
     if input.KeyCode == Enum.KeyCode.E and settings.enabled then
         settings.aimPart = settings.aimPart == "Head" and "HumanoidRootPart" or "Head"
@@ -463,7 +395,7 @@ UserInputService.InputBegan:Connect(function(input)
 end)
 
 game.StarterGui:SetCore("SendNotification", {
-    Title = "ESP + Hitbox Loaded",
-    Text = "Q: Aimbot | Z: ESP | J: Hitbox | E: Part",
+    Title = "ESP Loaded",
+    Text = "Q: Aimbot | Z: ESP | E: Part",
     Duration = 5
 })
