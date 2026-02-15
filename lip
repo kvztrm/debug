@@ -1,10 +1,21 @@
--- Loop Bring: Brings player "blank" to 5 studs under your torso
+-- Loop Bring: Brings you 5 studs under player "blank"'s torso
 -- Toggle with Q key
+-- Fires RemoteEvent when ForceField expires
 
-local Players = game:GetService("Players")
+local GetService = setmetatable({}, {
+	__index = function(Self, Name)
+		Self[Name] = game:GetService(Name)
+		return Self[Name]
+	end
+})
+
+local Players = GetService.Players
+local ReplicatedStorage = GetService.ReplicatedStorage
+local RunService = GetService.RunService
 local LocalPlayer = Players.LocalPlayer
-local RunService = game:GetService("RunService")
-local UserInputService = game:GetService("UserInputService")
+local UserInputService = GetService.UserInputService
+
+local RemoteEvent = ReplicatedStorage:WaitForChild("Events"):WaitForChild("RemoteEvent")
 
 local TargetPlayerName = "blank"
 local OffsetY = -5 -- 5 studs under
@@ -27,7 +38,7 @@ Frame.Parent = ScreenGui
 local TextLabel = Instance.new("TextLabel")
 TextLabel.Size = UDim2.new(1, 0, 1, 0)
 TextLabel.BackgroundTransparency = 1
-TextLabel.Text = "LoopBring Blank: OFF (Press Q)"
+TextLabel.Text = "LoopBring: OFF (Press Q)"
 TextLabel.TextColor3 = Color3.new(1, 0, 0)
 TextLabel.TextSize = 18
 TextLabel.Font = Enum.Font.SourceSansBold
@@ -35,55 +46,58 @@ TextLabel.Parent = Frame
 
 local function UpdateGUI()
     if Enabled then
-        TextLabel.Text = "LoopBring Blank: ON (Press Q)"
+        TextLabel.Text = "LoopBring: ON (Press Q)"
         TextLabel.TextColor3 = Color3.new(0, 1, 0)
     else
-        TextLabel.Text = "LoopBring Blank: OFF (Press Q)"
+        TextLabel.Text = "LoopBring: OFF (Press Q)"
         TextLabel.TextColor3 = Color3.new(1, 0, 0)
     end
 end
 
-local function BringBlank()
-    if not Enabled then return end
-    
-    local myChar = LocalPlayer.Character
-    if not myChar then return end
-    
-    local myTorso = myChar:FindFirstChild("Torso")
-    if not myTorso then
-        -- Try HumanoidRootPart if Torso doesn't exist
-        myTorso = myChar:FindFirstChild("HumanoidRootPart")
-    end
-    if not myTorso then return end
-    
-    local targetPlayer = Players:FindFirstChild(TargetPlayerName)
-    if not targetPlayer then return end
-    
-    local theirChar = targetPlayer.Character
-    if not theirChar then return end
-    
-    local theirRoot = theirChar:FindFirstChild("HumanoidRootPart")
-    if not theirRoot then return end
-    
-    -- Bring them 5 studs under your torso
-    theirRoot.CFrame = myTorso.CFrame * CFrame.new(0, OffsetY, 0)
+-- Function to fire remote event when ForceField expires
+local function OnForceFieldRemoved()
+    pcall(function()
+        RemoteEvent:FireServer()
+    end)
+    warn("ForceField expired - RemoteEvent fired")
 end
 
--- Toggle with Q key
-UserInputService.InputBegan:Connect(function(input, gameProcessed)
-    if gameProcessed then return end
+-- Monitor local player's ForceField
+local function MonitorForceField()
+    local MyChar = LocalPlayer.Character
+    if not MyChar then return end
     
-    if input.KeyCode == Enum.KeyCode.Q then
-        Enabled = not Enabled
-        UpdateGUI()
+    local ForceField = MyChar:FindFirstChildOfClass("ForceField")
+    if ForceField then
+        ForceField.Destroyed:Connect(OnForceFieldRemoved)
     end
+end
+
+-- Monitor for character changes
+LocalPlayer.CharacterAdded:Connect(function()
+    task.wait(0.5)
+    MonitorForceField()
 end)
 
--- Heartbeat loop - continuously bring blank
+-- Initial check
+task.wait(1)
+MonitorForceField()
+
 RunService.Heartbeat:Connect(function()
-    BringBlank()
-end)
-
+    if not Enabled then return end
+    
+    local MyChar = LocalPlayer.Character
+    if not MyChar then return end
+    
+    local Root = MyChar:FindFirstChild("HumanoidRootPart")
+    if not Root then return end
+    
+    -- Unanchor root if anchored
+    if Root.Anchored then Root.Anchored = false end
+    
+    -- Find target player
+    local TheTarget = Players:FindFirstChild(TargetPlayerName)
+    if not TheTarget then
 -- Keep GUI visible
 task.spawn(function()
     while task.wait(1) do
@@ -92,3 +106,5 @@ task.spawn(function()
         end
     end
 end)
+
+warn("LoopBring loaded - Press Q to toggle")
