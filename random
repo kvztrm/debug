@@ -33,18 +33,24 @@ local function isVisible(player)
         character:FindFirstChild("UpperTorso") or character:FindFirstChild("Torso")
     }
     
-    local ignoreList = {LocalPlayer.Character, Camera}
+    local origin = Camera.CFrame.Position  -- Camera center/start point
+    local raycastParams = RaycastParams.new()
+    raycastParams.FilterType = Enum.RaycastFilterType.Blacklist
+    raycastParams.FilterDescendantsInstances = {LocalPlayer.Character, Camera}
     
     for _, part in ipairs(partsToCheck) do
         if part then
-            local obscuringParts = Camera:GetPartsObscuringTarget({part.Position}, ignoreList)
-            if #obscuringParts == 0 then 
+            local direction = (part.Position - origin)  -- Straight to target part
+            local result = workspace:Raycast(origin, direction, raycastParams)
+            
+            -- Visible if: no hit OR hit belongs to target's character
+            if not result or result.Instance:IsDescendantOf(character) then
                 return true
             end
         end
     end
     
-    return false
+    return false  -- Blocked if all rays hit something else
 end
 
 local function findTargetInFOV()
