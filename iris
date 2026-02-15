@@ -1,256 +1,359 @@
-local Iris = loadstring(game:HttpGet("https://raw.githubusercontent.com/x0581/Iris-Exploit-Bundle/2.0.4/bundle.lua"))().Init(game.CoreGui)
+local Iris = loadstring(game:HttpGet("https://raw.githubusercontent.com/SirMallard/Iris/main/Iris.lua"))()
+Iris.Init(game.CoreGui)
 
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
-local Camera = workspace.CurrentCamera
+local TweenService = game:GetService("TweenService")
+local UserInputService = game:GetService("UserInputService")
+local Workspace = game:GetService("Workspace")
+local Camera = Workspace.CurrentCamera
 local LocalPlayer = Players.LocalPlayer
+local Mouse = LocalPlayer:GetMouse()
 
--- States
-local aimbotEnabled = Iris.State(false)
-local autoKillEnabled = Iris.State(false)
-local espEnabled = Iris.State(false)
-local fovSize = Iris.State(60)
+-- States from your GUI
+local aimbotEnabled   = Iris.State(false)
+local autoKillEnabled = Iris.State(false)  -- placeholder, no logic yet
+local espEnabled      = Iris.State(false)
+local fovSize         = Iris.State(80)     -- default from script
+
+-- Aimbot settings (from the provided script)
+local aimSettings = {
+    aimPart   = "Head",
+    smoothing = 0.05,
+    wallCheck = false,
+    teamCheck = false
+}
 
 -- FOV Circle
 local fovCircle = Drawing.new("Circle")
-fovCircle.Thickness = 2
-fovCircle.NumSides = 100
-fovCircle.Filled = false
-fovCircle.Color = Color3.fromRGB(50, 255, 100)
-fovCircle.Transparency = 0.8
-fovCircle.Visible = false
+fovCircle.Thickness    = 1
+fovCircle.NumSides     = 64
+fovCircle.Filled       = false
+fovCircle.Color        = Color3.fromRGB(0, 255, 100)
+fovCircle.Visible      = false
 
--- Target Info GUI
-local targetGui = Instance.new("ScreenGui")
-targetGui.Name = "TargetInfo"
-targetGui.Parent = game.CoreGui
-targetGui.ResetOnSpawn = false
+-- Target Info GUI (ripped + adapted)
+local screenGui = Instance.new("ScreenGui")
+screenGui.Name = "TargetInfo"
+screenGui.IgnoreGuiInset = true
+screenGui.Parent = game.CoreGui
+screenGui.ResetOnSpawn = false
 
-local frame = Instance.new("Frame", targetGui)
-frame.Size = UDim2.new(0, 240, 0, 90)
-frame.Position = UDim2.new(0.5, -120, 0.08, 0)
-frame.BackgroundColor3 = Color3.fromRGB(20, 20, 25)
-frame.BorderColor3 = Color3.fromRGB(0, 180, 255)
-frame.Visible = false
+local targetFrame = Instance.new("Frame", screenGui)
+targetFrame.Size              = UDim2.new(0, 220, 0, 70)
+targetFrame.Position          = UDim2.new(0.5, -110, 0, 50)
+targetFrame.BackgroundColor3  = Color3.fromRGB(25, 25, 30)
+targetFrame.BorderColor3      = Color3.fromRGB(0, 150, 255)
+targetFrame.BorderSizePixel   = 2
+targetFrame.Visible           = false
 
-local thumb = Instance.new("ImageLabel", frame)
-thumb.Size = UDim2.new(0, 60, 0, 60)
-thumb.Position = UDim2.new(0, 10, 0.5, -30)
-thumb.BackgroundTransparency = 1
-thumb.Image = ""
+local profileImage = Instance.new("ImageLabel", targetFrame)
+profileImage.Size                  = UDim2.new(0, 50, 0, 50)
+profileImage.Position              = UDim2.new(0, 5, 0.5, -25)
+profileImage.BackgroundColor3      = Color3.fromRGB(40, 40, 45)
+profileImage.BorderSizePixel       = 0
 
-local nameLbl = Instance.new("TextLabel", frame)
-nameLbl.Size = UDim2.new(0, 160, 0, 25)
-nameLbl.Position = UDim2.new(0, 75, 0, 8)
-nameLbl.BackgroundTransparency = 1
-nameLbl.TextColor3 = Color3.new(1,1,1)
-nameLbl.Font = Enum.Font.GothamBold
-nameLbl.TextSize = 16
-nameLbl.Text = "TARGET: NONE"
+local targetName = Instance.new("TextLabel", targetFrame)
+targetName.Size                = UDim2.new(0, 160, 0, 22)
+targetName.Position            = UDim2.new(0, 60, 0, 8)
+targetName.BackgroundTransparency = 1
+targetName.TextColor3          = Color3.fromRGB(255, 255, 255)
+targetName.Font                = Enum.Font.GothamBold
+targetName.TextSize            = 15
+targetName.TextXAlignment      = Enum.TextXAlignment.Left
+targetName.Text                = "TARGET: NONE"
 
-local teamLbl = Instance.new("TextLabel", frame)
-teamLbl.Size = UDim2.new(0, 160, 0, 20)
-teamLbl.Position = UDim2.new(0, 75, 0, 33)
-teamLbl.BackgroundTransparency = 1
-teamLbl.TextColor3 = Color3.new(0.7,0.7,0.7)
-teamLbl.TextSize = 13
-teamLbl.Text = "TEAM: NONE"
+local targetTeam = Instance.new("TextLabel", targetFrame)
+targetTeam.Size                = UDim2.new(0, 160, 0, 18)
+targetTeam.Position            = UDim2.new(0, 60, 0, 30)
+targetTeam.BackgroundTransparency = 1
+targetTeam.TextColor3          = Color3.fromRGB(150, 150, 150)
+targetTeam.Font                = Enum.Font.Gotham
+targetTeam.TextSize            = 12
+targetTeam.TextXAlignment      = Enum.TextXAlignment.Left
+targetTeam.Text                = "TEAM: NONE"
 
-local hpFrame = Instance.new("Frame", frame)
-hpFrame.Size = UDim2.new(0, 150, 0, 10)
-hpFrame.Position = UDim2.new(0, 75, 0, 60)
-hpFrame.BackgroundColor3 = Color3.fromRGB(60,60,60)
+local healthBg = Instance.new("Frame", targetFrame)
+healthBg.Size                = UDim2.new(0, 155, 0, 8)
+healthBg.Position            = UDim2.new(0, 60, 0, 50)
+healthBg.BackgroundColor3    = Color3.fromRGB(50, 50, 50)
+healthBg.BorderSizePixel     = 0
 
-local hpBar = Instance.new("Frame", hpFrame)
-hpBar.Size = UDim2.new(1,0,1,0)
-hpBar.BackgroundColor3 = Color3.fromRGB(0,220,60)
+local healthFill = Instance.new("Frame", healthBg)
+healthFill.Size                  = UDim2.new(1, 0, 1, 0)
+healthFill.BackgroundColor3      = Color3.fromRGB(0, 200, 100)
+healthFill.BorderSizePixel       = 0
 
--- Box ESP Storage
-local espObjects = {}
+local healthText = Instance.new("TextLabel", targetFrame)
+healthText.Size                = UDim2.new(0, 155, 0, 15)
+healthText.Position            = UDim2.new(0, 60, 0, 59)
+healthText.BackgroundTransparency = 1
+healthText.TextColor3          = Color3.fromRGB(200, 200, 200)
+healthText.Font                = Enum.Font.Code
+healthText.TextSize            = 11
+healthText.TextXAlignment      = Enum.TextXAlignment.Right
+healthText.Text                = "100 HP"
 
-local function createBoxESP(player)
-    if espObjects[player] or player == LocalPlayer then return end
+-- Box ESP (ripped functions + adapted)
+local espDrawings = {}
+
+local function worldToScreen(worldPoint)
+    local screenPos, onScreen = Camera:WorldToViewportPoint(worldPoint)
+    return Vector2.new(screenPos.X, screenPos.Y), onScreen
+end
+
+local function isSameTeam(player)
+    if not aimSettings.teamCheck then return false end
+    local myTeam = LocalPlayer.Team
+    if not myTeam then return false end
+    return player.Team and player.Team == myTeam
+end
+
+local function createPlayerESP(player)
+    if espDrawings[player] or player == LocalPlayer or isSameTeam(player) then return end
 
     local box = Drawing.new("Square")
-    box.Thickness = 1.5
-    box.Filled = false
-    box.Color = Color3.fromRGB(255, 80, 80)
-    box.Transparency = 1
+    box.Thickness    = 2
+    box.Color        = Color3.fromRGB(255, 50, 50)
+    box.Filled       = false
+    box.Visible      = false
 
-    local healthLine = Drawing.new("Line")
-    healthLine.Thickness = 2.5
-    healthLine.Color = Color3.fromRGB(0, 255, 0)
-    healthLine.Transparency = 1
+    local hpLine = Drawing.new("Line")
+    hpLine.Thickness    = 3
+    hpLine.Color        = Color3.fromRGB(0, 255, 0)
+    hpLine.Visible      = false
 
-    local healthText = Drawing.new("Text")
-    healthText.Size = 13
-    healthText.Center = true
-    healthText.Outline = true
-    healthText.Color = Color3.fromRGB(255, 255, 255)
+    local name = Drawing.new("Text")
+    name.Size     = 13
+    name.Color    = Color3.fromRGB(255, 255, 255)
+    name.Center   = true
+    name.Outline  = true
+    name.Visible  = false
 
-    local nameText = Drawing.new("Text")
-    nameText.Size = 14
-    nameText.Center = true
-    nameText.Outline = true
-    nameText.Color = Color3.fromRGB(220, 220, 255)
+    local hpNum = Drawing.new("Text")
+    hpNum.Size     = 12
+    hpNum.Color    = Color3.fromRGB(255, 255, 255)
+    hpNum.Center   = true
+    hpNum.Outline  = true
+    hpNum.Visible  = false
 
-    local conn
-    conn = RunService.RenderStepped:Connect(function()
-        if not espEnabled:get() or not player.Character or not player.Character:FindFirstChild("Humanoid") or not player.Character:FindFirstChild("HumanoidRootPart") then
+    local distanceTxt = Drawing.new("Text")
+    distanceTxt.Size     = 10
+    distanceTxt.Color    = Color3.fromRGB(180, 180, 180)
+    distanceTxt.Center   = true
+    distanceTxt.Outline  = true
+    distanceTxt.Visible  = false
+
+    local conn = RunService.RenderStepped:Connect(function()
+        if not espEnabled:get() or not player.Character then
             box.Visible = false
-            healthLine.Visible = false
-            healthText.Visible = false
-            nameText.Visible = false
+            hpLine.Visible = false
+            name.Visible = false
+            hpNum.Visible = false
+            distanceTxt.Visible = false
             return
         end
 
-        local humanoid = player.Character.Humanoid
-        local root = player.Character.HumanoidRootPart
+        local humanoid = player.Character:FindFirstChildOfClass("Humanoid")
+        local rootPart = player.Character:FindFirstChild("HumanoidRootPart")
         local head = player.Character:FindFirstChild("Head")
-        if not head then return end
 
-        local headPos, headVis = Camera:WorldToViewportPoint(head.Position + Vector3.new(0, 0.5, 0))
-        local rootPos, rootVis = Camera:WorldToViewportPoint(root.Position - Vector3.new(0, 3, 0))
+        if not humanoid or not rootPart or not head then return end
 
-        if not headVis or not rootVis then
+        local headPos, headOn = worldToScreen(head.Position)
+        local rootPos, rootOn = worldToScreen(rootPart.Position)
+
+        if not headOn or not rootOn then
             box.Visible = false
-            healthLine.Visible = false
-            healthText.Visible = false
-            nameText.Visible = false
+            hpLine.Visible = false
+            name.Visible = false
+            hpNum.Visible = false
+            distanceTxt.Visible = false
             return
         end
 
-        local height = math.abs(headPos.Y - rootPos.Y)
-        local width = height * 0.6
+        local myRoot = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+        local dist = myRoot and math.floor((rootPart.Position - myRoot.Position).Magnitude) or 0
 
-        box.Size = Vector2.new(width, height)
-        box.Position = Vector2.new(headPos.X - width/2, headPos.Y)
-        box.Visible = true
+        local baseHeight = math.abs(rootPos.Y - headPos.Y)
+        local scale = math.clamp(100 / (dist + 10), 0.3, 2.5)
+        local height = baseHeight * scale
+        local width = height * 0.7
 
-        local hpRatio = humanoid.Health / humanoid.MaxHealth
-        healthLine.From = Vector2.new(box.Position.X - 6, box.Position.Y + height)
-        healthLine.To = Vector2.new(box.Position.X - 6, box.Position.Y + height * (1 - hpRatio))
-        healthLine.Color = Color3.fromHSV(hpRatio * 0.3, 1, 1)
-        healthLine.Visible = true
+        local centerX = (headPos.X + rootPos.X) / 2
+        local topY = headPos.Y - height * 0.05 * scale
+        local bottomY = rootPos.Y + height * 0.05 * scale
 
-        healthText.Text = tostring(math.floor(humanoid.Health))
-        healthText.Position = Vector2.new(box.Position.X + width/2, box.Position.Y + height + 2)
-        healthText.Visible = true
+        box.Size     = Vector2.new(width, height)
+        box.Position = Vector2.new(centerX - width/2, topY)
+        box.Visible  = true
 
-        nameText.Text = player.Name
-        nameText.Position = Vector2.new(box.Position.X + width/2, box.Position.Y - 16)
-        nameText.Visible = true
+        local hpPercent = humanoid.Health / humanoid.MaxHealth
+        hpLine.From = Vector2.new(centerX - width/2 - 4, bottomY)
+        hpLine.To   = Vector2.new(centerX - width/2 - 4, bottomY - height * hpPercent)
+        hpLine.Color = hpPercent > 0.5 and Color3.fromRGB(0, 255, 0) or hpPercent > 0.25 and Color3.fromRGB(255, 200, 0) or Color3.fromRGB(255, 0, 0)
+        hpLine.Visible = true
+
+        name.Text     = player.Name
+        name.Position = Vector2.new(centerX, topY - 14 * scale)
+        name.Size     = math.clamp(13 * scale, 8, 20)
+        name.Visible  = true
+
+        hpNum.Text     = math.floor(humanoid.Health)
+        hpNum.Position = Vector2.new(centerX + width/2 + 6, bottomY)
+        hpNum.Size     = math.clamp(12 * scale, 8, 18)
+        hpNum.Visible  = true
+
+        distanceTxt.Text     = dist .. "m"
+        distanceTxt.Position = Vector2.new(centerX, bottomY + 3)
+        distanceTxt.Size     = math.clamp(10 * scale, 6, 14)
+        distanceTxt.Visible  = true
     end)
 
-    espObjects[player] = {box = box, healthLine = healthLine, healthText = healthText, name = nameText, conn = conn}
+    espDrawings[player] = {conn, box, hpLine, name, hpNum, distanceTxt}
 end
 
-local function removeBoxESP(player)
-    if espObjects[player] then
-        espObjects[player].conn:Disconnect()
-        for _, obj in pairs(espObjects[player]) do
-            if obj.Destroy then obj:Destroy() end
+local function clearPlayerESP(player)
+    if espDrawings[player] then
+        for _, obj in ipairs(espDrawings[player]) do
+            if typeof(obj) == "RBXScriptConnection" then
+                obj:Disconnect()
+            elseif obj.Visible ~= nil then
+                obj.Visible = false
+            end
         end
-        espObjects[player] = nil
+        espDrawings[player] = nil
     end
 end
 
--- Target GUI Update
-local function updateTargetGui(target)
-    if target and target.Character and target.Character:FindFirstChild("Humanoid") then
-        frame.Visible = true
-        nameLbl.Text = "TARGET: " .. target.Name:upper()
-        
-        local team = target.Team and target.Team.Name or "NEUTRAL"
-        teamLbl.Text = "TEAM: " .. team:upper()
-        teamLbl.TextColor3 = target.TeamColor and target.TeamColor.Color or Color3.new(0.6,0.6,0.6)
-        
-        thumb.Image = Players:GetUserThumbnailAsync(target.UserId, Enum.ThumbnailType.HeadShot, Enum.ThumbnailSize.Size150x150)
-        
-        local hp = target.Character.Humanoid.Health
-        local max = target.Character.Humanoid.MaxHealth
-        hpBar.Size = UDim2.new(hp/max, 0, 1, 0)
-        hpBar.BackgroundColor3 = Color3.fromHSV((hp/max)*0.3, 1, 1)
-    else
-        frame.Visible = false
+-- Target GUI update (ripped)
+local function updateTargetDisplay(player)
+    if not player or not player.Character then
+        targetFrame.Visible = false
+        return
     end
+
+    targetFrame.Visible = true
+
+    local humanoid = player.Character:FindFirstChildOfClass("Humanoid")
+    if humanoid then
+        local hpPercent = humanoid.Health / humanoid.MaxHealth
+        healthFill.Size = UDim2.new(hpPercent, 0, 1, 0)
+        healthText.Text = math.floor(humanoid.Health) .. " HP"
+    end
+
+    targetName.Text = "TARGET: " .. player.Name:upper()
+
+    local teamName, teamColor = player.Team and player.Team.Name or "NEUTRAL", player.Team and player.Team.TeamColor.Color or Color3.fromRGB(150, 150, 150)
+    targetTeam.Text = "TEAM: " .. teamName:upper()
+    targetTeam.TextColor3 = teamColor
+
+    local thumbSuccess, thumbUrl = pcall(Players.GetUserThumbnailAsync, Players, player.UserId, Enum.ThumbnailType.HeadShot, Enum.ThumbnailSize.Size150x150)
+    profileImage.Image = thumbSuccess and thumbUrl or ""
 end
 
--- Closest Target Finder
-local function findClosestInFOV()
-    local center = Camera.ViewportSize / 2
-    local closest, minDist = nil, fovSize:get()
+-- Find closest target in FOV (adapted for mouse position check)
+local function findTarget()
+    local mousePos = Vector2.new(Mouse.X, Mouse.Y)
+    local myRoot = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+    if not myRoot then return nil end
 
-    for _, plr in Players:GetPlayers() do
-        if plr ~= LocalPlayer and plr.Character and plr.Character:FindFirstChild("Head") then
-            local head = plr.Character.Head
-            local screen, onScreen = Camera:WorldToViewportPoint(head.Position)
-            if onScreen then
-                local dist = (Vector2.new(screen.X, screen.Y) - center).Magnitude
-                if dist < minDist then
-                    minDist = dist
-                    closest = plr
+    local closest = nil
+    local closestDist = math.huge
+
+    for _, p in ipairs(Players:GetPlayers()) do
+        if p ~= LocalPlayer and p.Character and not isSameTeam(p) then
+            local part = p.Character:FindFirstChild(aimSettings.aimPart) or p.Character:FindFirstChild("HumanoidRootPart")
+            if part then
+                local screenPos, onScreen = worldToScreen(part.Position)
+                if onScreen then
+                    local distToMouse = (screenPos - mousePos).Magnitude
+                    if distToMouse <= fovSize:get() then
+                        local distToMe = (part.Position - myRoot.Position).Magnitude
+                        if distToMe < closestDist then
+                            closestDist = distToMe
+                            closest = p
+                        end
+                    end
                 end
             end
         end
     end
+
     return closest
 end
 
--- Main Loop
+-- Aimbot logic (ripped tween camera)
+local function aimAt(target)
+    if not target or not target.Character then return end
+
+    local part = target.Character:FindFirstChild(aimSettings.aimPart) or target.Character:FindFirstChild("HumanoidRootPart")
+    if not part then return end
+
+    local targetPos = part.Position
+    local currentCFrame = Camera.CFrame
+    local targetCFrame = CFrame.new(currentCFrame.Position, targetPos)
+
+    local tweenInfo = TweenInfo.new(aimSettings.smoothing, Enum.EasingStyle.Linear, Enum.EasingDirection.Out)
+    TweenService:Create(Camera, tweenInfo, {CFrame = targetCFrame}):Play()
+    Mouse.Hit = CFrame.new(targetPos)
+end
+
+-- Main loop
 RunService.RenderStepped:Connect(function()
-    -- FOV Circle
+    -- FOV circle update
     if aimbotEnabled:get() then
         fovCircle.Position = Vector2.new(Camera.ViewportSize.X / 2, Camera.ViewportSize.Y / 2)
-        fovCircle.Radius = fovSize:get()
-        fovCircle.Visible = true
+        fovCircle.Radius   = fovSize:get()
+        fovCircle.Visible  = true
     else
         fovCircle.Visible = false
-        updateTargetGui(nil)
     end
 
-    -- Aimbot + Target GUI
     if aimbotEnabled:get() then
-        local target = findClosestInFOV()
-        updateTargetGui(target)
-        -- Add your actual aimbot logic here (e.g. camera manipulation or silent aim)
+        local target = findTarget()
+        updateTargetDisplay(target)
+
+        if target then
+            aimAt(target)  -- actual aim lock
+        end
+    else
+        updateTargetDisplay(nil)
     end
 end)
 
--- ESP Setup
+-- ESP toggle
 espEnabled.changed:Connect(function(enabled)
     if enabled then
-        for _, plr in Players:GetPlayers() do
-            createBoxESP(plr)
+        for _, p in ipairs(Players:GetPlayers()) do
+            createPlayerESP(p)
         end
-        Players.PlayerAdded:Connect(function(plr)
-            createBoxESP(plr)
-        end)
+        Players.PlayerAdded:Connect(createPlayerESP)
     else
-        for plr, _ in pairs(espObjects) do
-            removeBoxESP(plr)
+        for p in pairs(espDrawings) do
+            clearPlayerESP(p)
         end
     end
 end)
 
--- Iris GUI
+-- Iris GUI (your structure, all caps)
 Iris:Connect(function()
     Iris.Window({"LIFE IN PRISON"})
 
     Iris.Tree({"MAIN"})
         Iris.Checkbox({"TOGGLE AIMBOT / FOV"}, {isChecked = aimbotEnabled})
         Iris.Text({"AIMBOT: " .. (aimbotEnabled:get() and "ON" or "OFF")})
-        
+
         Iris.SliderNum(
-            {"FOV SIZE"}, 
+            {"FOV SIZE"},
             {
                 number    = fovSize,
                 min       = 30,
-                max       = 100,
-                increment = 1
+                max       = 300,   -- wider range possible
+                increment = 5
             }
         )
-        Iris.Text({"CURRENT FOV: " .. math.floor(fovSize:get() + 0.5)})
+        Iris.Text({"CURRENT FOV: " .. math.floor(fovSize:get())})
 
         Iris.Checkbox({"ENABLE AUTOKILL"}, {isChecked = autoKillEnabled})
         Iris.Text({"AUTOKILL: " .. (autoKillEnabled:get() and "ON" or "OFF")})
