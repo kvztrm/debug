@@ -1,9 +1,12 @@
+-- Simple Box ESP (Mouse-following FOV)
 local Players = game:GetService("Players")
-local UserInputService = game:GetService("UserInputService")
 local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
 local TweenService = game:GetService("TweenService")
-local Camera = workspace.CurrentCamera
+local Workspace = game:GetService("Workspace")
+local Camera = Workspace.CurrentCamera
 local LocalPlayer = Players.LocalPlayer
+local Mouse = LocalPlayer:GetMouse()
 
 local settings = {
     enabled = false,
@@ -11,20 +14,279 @@ local settings = {
     fov = 80,
     aimKey = Enum.KeyCode.Q,
     espKey = Enum.KeyCode.Z,
-    wallCheckKey = Enum.KeyCode.E,
     aimPart = "Head",
     smoothing = 0.05,
-    wallCheck = true,
+    wallCheck = false,
     teamCheck = false
 }
 
-local espBoxes = {}
-local target = nil
+local currentTarget = nil
+local espDrawings = {}
 
-local function isVisible(player)
+-- GUI Setup
+local screenGui = Instance.new("ScreenGui")
+screenGui.Name = "ESP_GUI"
+screenGui.IgnoreGuiInset = true
+screenGui.Parent = game.CoreGui
+
+local fovCircle = Drawing.new("Circle")
+fovCircle.Thickness = 1
+fovCircle.NumSides = 64
+fovCircle.Filled = false
+fovCircle.Color = Color3.fromRGB(0, 255, 100)
+
+local targetFrame = Instance.new("Frame")
+targetFrame.Size = UDim2.new(0, 220, 0, 70)
+targetFrame.Position = UDim2.new(0.5, -110, 0, 50)
+targetFrame.BackgroundColor3 = Color3.fromRGB(25, 25, 30)
+targetFrame.BorderColor3 = Color3.fromRGB(0, 150, 255)
+targetFrame.BorderSizePixel = 2
+targetFrame.Parent = screenGui
+targetFrame.Visible = false
+
+local profileImage = Instance.new("ImageLabel")
+profileImage.Size = UDim2.new(0, 50, 0, 50)
+profileImage.Position = UDim2.new(0, 5, 0.5, -25)
+profileImage.BackgroundColor3 = Color3.fromRGB(40, 40, 45)
+profileImage.BorderSizePixel = 0
+profileImage.Parent = targetFrame
+
+local targetName = Instance.new("TextLabel")
+targetName.Size = UDim2.new(0, 160, 0, 22)
+targetName.Position = UDim2.new(0, 60, 0, 8)
+targetName.BackgroundTransparency = 1
+targetName.TextColor3 = Color3.fromRGB(255, 255, 255)
+targetName.Font = Enum.Font.GothamBold
+targetName.TextSize = 15
+targetName.TextXAlignment = Enum.TextXAlignment.Left
+targetName.Text = "Target: None"
+targetName.Parent = targetFrame
+
+local targetTeam = Instance.new("TextLabel")
+targetTeam.Size = UDim2.new(0, 160, 0, 18)
+targetTeam.Position = UDim2.new(0, 60, 0, 30)
+targetTeam.BackgroundTransparency = 1
+targetTeam.TextColor3 = Color3.fromRGB(150, 150, 150)
+targetTeam.Font = Enum.Font.Gotham
+targetTeam.TextSize = 12
+targetTeam.TextXAlignment = Enum.TextXAlignment.Left
+targetTeam.Text = "Team: None"
+targetTeam.Parent = targetFrame
+
+local healthBg = Instance.new("Frame")
+healthBg.Size = UDim2.new(0, 155, 0, 8)
+healthBg.Position = UDim2.new(0, 60, 0, 50)
+healthBg.BackgroundColor3 = Color3.fromRGB(50, 50, 50)
+healthBg.BorderSizePixel = 0
+healthBg.Parent = targetFrame
+
+local healthFill = Instance.new("Frame")
+healthFill.Size = UDim2.new(1, 0, 1, 0)
+healthFill.BackgroundColor3 = Color3.fromRGB(0, 200, 100)
+healthFill.BorderSizePixel = 0
+healthFill.Parent = healthBg
+
+local healthText = Instance.new("TextLabel")
+healthText.Size = UDim2.new(0, 155, 0, 15)
+healthText.Position = UDim2.new(0, 60, 0, 59)
+healthText.BackgroundTransparency = 1
+healthText.TextColor3 = Color3.fromRGB(200, 200, 200)
+healthText.Font = Enum.Font.Code
+healthText.TextSize = 11
+healthText.TextXAlignment = Enum.TextXAlignment.Right
+healthText.Text = "100 HP"
+healthText.Parent = targetFrame
+
+function worldToScreen(worldPoint)
+    local screenPos, onScreen = Camera:WorldToViewportPoint(worldPoint)
+    return Vector2.new(screenPos.X, screenPos.Y), onScreen
+end
+
+function getScreenSize()
+    return workspace.CurrentCamera.ViewportSize
+end
+
+-- Find closest player to mouse who is in FOV
+function findTargetAtMouse()
+    local mousePos = Vector2.new(Mouse.X, Mouse.Y)
+    local myRoot = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+    if not myRoot then return nil end
+    
+    local closestPlayer = nil
+    local closestDistance = math.huge
+    
+    for _, p in ipairs(Players:GetPlayers()) do
+        if p ~= LocalPlayer and p.Character and not isSameTeam(p) then
+            local part = p.Character:FindFirstChild(settings.aimPart) or p.Character:FindFirstChild("HumanoidRootPart")
+            if part and isVisible(part) then
+                local screenPos, onScreen = worldToScreen(part.Position)
+                
+                if onScreen then
+                    local distToMouse = (screenPos - mousePos).Magnitude
+                    
+                    if distToMouse <= settings.fov then
+                        local distToMe = (part.Position - myRoot.Position).Magnitude
+                        
+                        if distToMe < closestDistance then
+                            closestDistance = distToMe
+                            closestPlayer = p
+                        end
+                    end
+                end
+            end
+        end
+    end
+    
+    return closestPlayer
+end
+
+-- ESP with distance-based scaling
+function createPlayerESP(player)
+    clearPlayerESP(player)
+    
+    local box = Drawing.new("Square")
+    box.Thickness = 2
+    box.Color = Color3.fromRGB(255, 50, 50)
+    box.Filled = false
+    box.Visible = false
+    
+    local hpLine = Drawing.new("Line")
+    hpLine.Thickness = 3
+    hpLine.Color = Color3.fromRGB(0, 255, 0)
+    hpLine.Visible = false
+    
+    local name = Drawing.new("Text")
+    name.Size = 13
+    name.Color = Color3.fromRGB(255, 255, 255)
+    name.Center = true
+    name.Outline = true
+    name.Visible = false
+    
+    local hpNum = Drawing.new("Text")
+    hpNum.Size = 12
+    hpNum.Color = Color3.fromRGB(255, 255, 255)
+    hpNum.Center = true
+    hpNum.Outline = true
+    hpNum.Visible = false
+    
+    local distance = Drawing.new("Text")
+    distance.Size = 10
+    distance.Color = Color3.fromRGB(180, 180, 180)
+    distance.Center = true
+    distance.Outline = true
+    distance.Visible = false
+    
+    local conn = RunService.RenderStepped:Connect(function()
+        if not settings.espEnabled or not player.Character then
+            box.Visible = false
+            hpLine.Visible = false
+            name.Visible = false
+            hpNum.Visible = false
+            distance.Visible = false
+            return
+        end
+        
+        local humanoid = player.Character:FindFirstChildOfClass("Humanoid")
+        local rootPart = player.Character:FindFirstChild("HumanoidRootPart")
+        local head = player.Character:FindFirstChild("Head")
+        
+        if not humanoid or not rootPart or not head then return end
+        
+        local headPos, headOnScreen = worldToScreen(head.Position)
+        local rootPos, rootOnScreen = worldToScreen(rootPart.Position)
+        
+        if not headOnScreen or not rootOnScreen then
+            box.Visible = false
+            hpLine.Visible = false
+            name.Visible = false
+            hpNum.Visible = false
+            distance.Visible = false
+            return
+        end
+        
+        local myRoot = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+        local distToPlayer = 0
+        if myRoot then
+            distToPlayer = math.floor((rootPart.Position - myRoot.Position).Magnitude)
+        end
+        
+        local baseHeight = math.abs(rootPos.Y - headPos.Y)
+        local scaleFactor = math.clamp(100 / (distToPlayer + 10), 0.3, 2.5)
+        local height = baseHeight * scaleFactor
+        local width = height * 0.7
+        
+        local centerX = (headPos.X + rootPos.X) / 2
+        local topY = headPos.Y - height * 0.05 * scaleFactor
+        local bottomY = rootPos.Y + height * 0.05 * scaleFactor
+        
+        box.Size = Vector2.new(width, height)
+        box.Position = Vector2.new(centerX - width/2, topY)
+        box.Visible = true
+        
+        local hpPercent = humanoid.Health / humanoid.MaxHealth
+        hpLine.From = Vector2.new(centerX - width/2 - 4, bottomY)
+        hpLine.To = Vector2.new(centerX - width/2 - 4, bottomY - height * hpPercent)
+        hpLine.Color = hpPercent > 0.5 and Color3.fromRGB(0, 255, 0) or hpPercent > 0.25 and Color3.fromRGB(255, 200, 0) or Color3.fromRGB(255, 0, 0)
+        hpLine.Visible = true
+        
+        name.Text = player.Name
+        name.Position = Vector2.new(centerX, topY - 14 * scaleFactor)
+        name.Size = math.clamp(13 * scaleFactor, 8, 20)
+        name.Visible = true
+        
+        hpNum.Text = math.floor(humanoid.Health)
+        hpNum.Position = Vector2.new(centerX + width/2 + 6, bottomY)
+        hpNum.Size = math.clamp(12 * scaleFactor, 8, 18)
+        hpNum.Visible = true
+        
+        distance.Text = distToPlayer .. "m"
+        distance.Position = Vector2.new(centerX, bottomY + 3)
+        distance.Size = math.clamp(10 * scaleFactor, 6, 14)
+        distance.Visible = true
+    end)
+    
+    espDrawings[player] = {conn, box, hpLine, name, hpNum, distance}
+end
+
+function clearPlayerESP(player)
+    if espDrawings[player] then
+        for _, obj in ipairs(espDrawings[player]) do
+            if typeof(obj) == "RBXScriptConnection" then obj:Disconnect()
+            elseif obj.Visible ~= nil then obj.Visible = false end
+        end
+        espDrawings[player] = nil
+    end
+end
+
+function toggleESP()
+    settings.espEnabled = not settings.espEnabled
+    if settings.espEnabled then
+        for _, p in ipairs(Players:GetPlayers()) do
+            if p ~= LocalPlayer then createPlayerESP(p) end
+        end
+        Players.PlayerAdded:Connect(function(p) createPlayerESP(p) end)
+    else
+        for player, _ in pairs(espDrawings) do clearPlayerESP(player) end
+    end
+end
+
+function getPlayerTeamInfo(player)
+    local teamName = player.Team and player.Team.Name or "Neutral"
+    local teamColor = player.Team and player.Team.TeamColor.Color or Color3.fromRGB(150, 150, 150)
+    return teamName, teamColor
+end
+
+function isSameTeam(player)
+    if not settings.teamCheck then return false end
+    local myTeam = LocalPlayer.Team
+    if not myTeam then return false end
+    return player.Team and player.Team == myTeam
+end
+
+function isVisible(targetPart)
     if not settings.wallCheck then return true end
     
-    local character = player.Character
+    local character = targetPart and targetPart.Parent
     if not character then return false end
     
     local partsToCheck = {
@@ -33,120 +295,128 @@ local function isVisible(player)
         character:FindFirstChild("UpperTorso") or character:FindFirstChild("Torso")
     }
     
-    local origin = Camera.CFrame.Position  -- Camera center/start point
+    local origin = Camera.CFrame.Position
     local raycastParams = RaycastParams.new()
     raycastParams.FilterType = Enum.RaycastFilterType.Blacklist
     raycastParams.FilterDescendantsInstances = {LocalPlayer.Character, Camera}
     
     for _, part in ipairs(partsToCheck) do
         if part then
-            local direction = (part.Position - origin)  -- Straight to target part
+            local direction = (part.Position - origin)
             local result = workspace:Raycast(origin, direction, raycastParams)
             
-            -- Visible if: no hit OR hit belongs to target's character
             if not result or result.Instance:IsDescendantOf(character) then
                 return true
             end
         end
     end
     
-    return false  -- Blocked if all rays hit something else
+    return false
 end
 
-local function findTargetInFOV()
-    local closestPlayer = nil
-    local shortestDistance = settings.fov
-
-    for _, player in pairs(Players:GetPlayers()) do
-        if player ~= LocalPlayer and player.Character and player.Character:FindFirstChild(settings.aimPart) then
-            if settings.teamCheck and player.Team == LocalPlayer.Team then continue end
-            
-            local part = player.Character[settings.aimPart]
-            local screenPoint, onScreen = Camera:WorldToScreenPoint(part.Position)
-            local distance = (Vector2.new(screenPoint.X, screenPoint.Y) - Vector2.new(Camera.ViewportSize.X / 2, Camera.ViewportSize.Y / 2)).Magnitude
-
-            if onScreen and distance < shortestDistance and isVisible(player) then
-                closestPlayer = player
-                shortestDistance = distance
-            end
-        end
-    end
-
-    return closestPlayer
+function aimAt(target)
+    if not target or not target.Character then return end
+    local part = target.Character:FindFirstChild(settings.aimPart) or target.Character:FindFirstChild("HumanoidRootPart")
+    if not part then return end
+    
+    local targetPos = part.Position
+    local currentCFrame = Camera.CFrame
+    local targetCFrame = CFrame.new(currentCFrame.Position, targetPos)
+    
+    local tweenInfo = TweenInfo.new(settings.smoothing, Enum.EasingStyle.Linear, Enum.EasingDirection.Out)
+    TweenService:Create(Camera, tweenInfo, {CFrame = targetCFrame}):Play()
+    Mouse.Hit = CFrame.new(targetPos)
 end
 
-local function aimAtTarget()
-    target = findTargetInFOV()
-    if target and target.Character and target.Character:FindFirstChild(settings.aimPart) then
-        local aimPart = target.Character[settings.aimPart]
-        local targetPos = aimPart.Position
+function updateTargetDisplay(player)
+    if player and player.Character then
+        targetFrame.Visible = true
+        targetName.Text = player.Name
+        profileImage.Image = game.Players:GetUserThumbnailAsync(player.UserId, Enum.ThumbnailType.HeadShot, Enum.ThumbnailSize.Size100x100)
         
-        local currentCFrame = Camera.CFrame
-        local targetCFrame = CFrame.lookAt(currentCFrame.Position, targetPos)
-        
-        local tween = TweenService:Create(Camera, TweenInfo.new(settings.smoothing), {CFrame = targetCFrame})
-        tween:Play()
+        local teamName, teamColor = getPlayerTeamInfo(player)
+        targetTeam.Text = "Team: " .. teamName
+        targetTeam.TextColor3 = teamColor
+    else
+        targetFrame.Visible = false
+        targetName.Text = "Target: None"
+        targetTeam.Text = "Team: None"
     end
 end
 
-local function toggleESP()
-    settings.espEnabled = not settings.espEnabled
-    for _, box in pairs(espBoxes) do
-        box:Remove()
-    end
-    espBoxes = {}
-end
-
-local function updateESP()
-    if not settings.espEnabled then return end
-    
-    for _, player in pairs(Players:GetPlayers()) do
-        if player ~= LocalPlayer and player.Character and player.Character:FindFirstChild("Head") then
-            if espBoxes[player] then continue end
-            
-            local box = Drawing.new("Square")
-            box.Visible = false
-            box.Color = Color3.new(1, 0, 0)
-            box.Thickness = 2
-            box.Transparency = 1
-            espBoxes[player] = box
-        end
-    end
-    
-    for player, box in pairs(espBoxes) do
-        if player.Character and player.Character:FindFirstChild("Head") then
-            local head = player.Character.Head
-            local vector, onScreen = Camera:WorldToViewportPoint(head.Position)
-            
-            if onScreen and isVisible(player) then
-                box.Size = Vector2.new(1000 / vector.Z, 1500 / vector.Z)
-                box.Position = Vector2.new(vector.X - box.Size.X / 2, vector.Y - box.Size.Y)
-                box.Visible = true
-            else
-                box.Visible = false
-            end
-        else
-            box:Remove()
-            espBoxes[player] = nil
-        end
-    end
-end
-
-UserInputService.InputBegan:Connect(function(input, gameProcessed)
-    if gameProcessed then return end
-    
-    if input.KeyCode == settings.aimKey then
-        settings.enabled = not settings.enabled
-    elseif input.KeyCode == settings.espKey then
-        toggleESP()
-    elseif input.KeyCode == settings.wallCheckKey then
-        settings.wallCheck = not settings.wallCheck
-    end
-end)
-
+-- Main loops
 RunService.Heartbeat:Connect(function()
-    if settings.enabled then
-        aimAtTarget()
+    if settings.enabled and currentTarget and currentTarget.Character then
+        local humanoid = currentTarget.Character:FindFirstChildOfClass("Humanoid")
+        if humanoid then
+            local currentHP = humanoid.Health
+            local maxHP = humanoid.MaxHealth
+            
+            local hpPercent = math.clamp(currentHP / maxHP, 0, 1)
+            healthFill.Size = UDim2.new(hpPercent, 0, 1, 0)
+            healthFill.BackgroundColor3 = hpPercent > 0.5 and Color3.fromRGB(0, 200, 100) or hpPercent > 0.25 and Color3.fromRGB(255, 200, 0) or Color3.fromRGB(200, 50, 50)
+            healthText.Text = math.floor(currentHP) .. " HP"
+            
+            if currentHP <= 0 then
+                currentTarget = findTargetAtMouse()
+            end
+        end
     end
-    updateESP()
 end)
+
+RunService.RenderStepped:Connect(function()
+    -- Circle follows mouse
+    fovCircle.Position = Vector2.new(Mouse.X, Mouse.Y)
+    fovCircle.Radius = settings.fov
+    
+    if settings.enabled then
+        fovCircle.Visible = true
+        
+        local newTarget = findTargetAtMouse()
+        
+        if newTarget and newTarget ~= currentTarget then
+            currentTarget = newTarget
+            updateTargetDisplay(currentTarget)
+        end
+        
+        if currentTarget then aimAt(currentTarget) end
+    else
+        fovCircle.Visible = false
+        targetFrame.Visible = false
+        currentTarget = nil
+    end
+end)
+
+-- Controls
+UserInputService.InputBegan:Connect(function(input)
+    if input.KeyCode == settings.aimKey and input.UserInputType == Enum.UserInputType.Keyboard then
+        settings.enabled = not settings.enabled
+        if settings.enabled then
+            currentTarget = findTargetAtMouse()
+            updateTargetDisplay(currentTarget)
+            if currentTarget then aimAt(currentTarget) end
+        else
+            currentTarget = nil
+            targetFrame.Visible = false
+        end
+    end
+    
+    if input.KeyCode == settings.espKey and input.UserInputType == Enum.UserInputType.Keyboard then toggleESP() end
+    
+    if input.KeyCode == Enum.KeyCode.E and settings.enabled then
+        settings.aimPart = settings.aimPart == "Head" and "HumanoidRootPart" or "Head"
+    end
+    
+    if input.KeyCode == Enum.KeyCode.Equals and settings.enabled then
+        settings.fov = math.min(settings.fov + 5, 200)
+    end
+    if input.KeyCode == Enum.KeyCode.Minus and settings.enabled then
+        settings.fov = math.max(settings.fov - 5, 20)
+    end
+end)
+
+game.StarterGui:SetCore("SendNotification", {
+    Title = "ESP Loaded",
+    Text = "Q: Aimbot | Z: ESP | E: Part",
+    Duration = 5
+})
