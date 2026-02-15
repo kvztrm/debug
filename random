@@ -1,4 +1,4 @@
--- Simple Box ESP (Mouse-following FOV)
+-- Simple Box ESP (Fixed Wall Check)
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
@@ -106,7 +106,39 @@ function getScreenSize()
     return workspace.CurrentCamera.ViewportSize
 end
 
--- Find closest player to mouse who is in FOV
+-- Wall check (only for aiming, not ESP)
+function isTargetVisible(player)
+    if not settings.wallCheck then return true end
+    
+    local character = player.Character
+    if not character then return false end
+    
+    local partsToCheck = {
+        character:FindFirstChild("Head"),
+        character:FindFirstChild("HumanoidRootPart"),
+        character:FindFirstChild("UpperTorso") or character:FindFirstChild("Torso")
+    }
+    
+    local origin = Camera.CFrame.Position
+    local raycastParams = RaycastParams.new()
+    raycastParams.FilterType = Enum.RaycastFilterType.Blacklist
+    raycastParams.FilterDescendantsInstances = {LocalPlayer.Character, Camera}
+    
+    for _, part in ipairs(partsToCheck) do
+        if part then
+            local direction = (part.Position - origin)
+            local result = workspace:Raycast(origin, direction, raycastParams)
+            
+            if not result or result.Instance:IsDescendantOf(character) then
+                return true
+            end
+        end
+    end
+    
+    return false
+end
+
+-- Find target (always includes all players for ESP)
 function findTargetAtMouse()
     local mousePos = Vector2.new(Mouse.X, Mouse.Y)
     local myRoot = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
@@ -118,7 +150,7 @@ function findTargetAtMouse()
     for _, p in ipairs(Players:GetPlayers()) do
         if p ~= LocalPlayer and p.Character and not isSameTeam(p) then
             local part = p.Character:FindFirstChild(settings.aimPart) or p.Character:FindFirstChild("HumanoidRootPart")
-            if part and isVisible(part) then
+            if part then
                 local screenPos, onScreen = worldToScreen(part.Position)
                 
                 if onScreen then
@@ -140,7 +172,7 @@ function findTargetAtMouse()
     return closestPlayer
 end
 
--- ESP with distance-based scaling
+-- ESP (no wall check - shows everyone)
 function createPlayerESP(player)
     clearPlayerESP(player)
     
@@ -283,39 +315,14 @@ function isSameTeam(player)
     return player.Team and player.Team == myTeam
 end
 
-function isVisible(targetPart)
-    if not settings.wallCheck then return true end
-    
-    local character = targetPart and targetPart.Parent
-    if not character then return false end
-    
-    local partsToCheck = {
-        character:FindFirstChild("Head"),
-        character:FindFirstChild("HumanoidRootPart"),
-        character:FindFirstChild("UpperTorso") or character:FindFirstChild("Torso")
-    }
-    
-    local origin = Camera.CFrame.Position
-    local raycastParams = RaycastParams.new()
-    raycastParams.FilterType = Enum.RaycastFilterType.Blacklist
-    raycastParams.FilterDescendantsInstances = {LocalPlayer.Character, Camera}
-    
-    for _, part in ipairs(partsToCheck) do
-        if part then
-            local direction = (part.Position - origin)
-            local result = workspace:Raycast(origin, direction, raycastParams)
-            
-            if not result or result.Instance:IsDescendantOf(character) then
-                return true
-            end
-        end
-    end
-    
-    return false
-end
-
 function aimAt(target)
     if not target or not target.Character then return end
+    
+    -- Check if target is visible before aiming
+    if settings.wallCheck and not isTargetVisible(target) then
+        return -- Don't aim if blocked by wall
+    end
+    
     local part = target.Character:FindFirstChild(settings.aimPart) or target.Character:FindFirstChild("HumanoidRootPart")
     if not part then return end
     
@@ -357,6 +364,7 @@ RunService.Heartbeat:Connect(function()
             healthFill.BackgroundColor3 = hpPercent > 0.5 and Color3.fromRGB(0, 200, 100) or hpPercent > 0.25 and Color3.fromRGB(255, 200, 0) or Color3.fromRGB(200, 50, 50)
             healthText.Text = math.floor(currentHP) .. " HP"
             
+            -- Only find new target if current dies OR becomes blocked
             if currentHP <= 0 then
                 currentTarget = findTargetAtMouse()
             end
@@ -365,7 +373,6 @@ RunService.Heartbeat:Connect(function()
 end)
 
 RunService.RenderStepped:Connect(function()
-    -- Circle follows mouse
     fovCircle.Position = Vector2.new(Mouse.X, Mouse.Y)
     fovCircle.Radius = settings.fov
     
@@ -374,12 +381,16 @@ RunService.RenderStepped:Connect(function()
         
         local newTarget = findTargetAtMouse()
         
+        -- Switch target if new one found
         if newTarget and newTarget ~= currentTarget then
             currentTarget = newTarget
             updateTargetDisplay(currentTarget)
         end
         
-        if currentTarget then aimAt(currentTarget) end
+        -- Only aim if target is visible (wall check)
+        if currentTarget then
+            aimAt(currentTarget)
+        end
     else
         fovCircle.Visible = false
         targetFrame.Visible = false
