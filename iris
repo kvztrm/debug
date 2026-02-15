@@ -1,7 +1,9 @@
 local Iris = loadstring(game:HttpGet("https://raw.githubusercontent.com/x0581/Iris-Exploit-Bundle/2.0.4/bundle.lua"))().Init(game.CoreGui)
 
 local aimbotEnabled = Iris.State(false)
-local fovSize       = Iris.State(60)
+local autoKillEnabled = Iris.State(false)
+local espEnabled = Iris.State(false)
+local fovSize = Iris.State(60)
 
 Iris:Connect(function()
     Iris.Window({"LIFE IN PRISON"})
@@ -20,9 +22,16 @@ Iris:Connect(function()
             }
         )
         Iris.Text({"CURRENT FOV: " .. math.floor(fovSize:get() + 0.5)})
+
+        Iris.Checkbox({"ENABLE AUTOKILL"}, {isChecked = autoKillEnabled})
+        Iris.Text({"AUTOKILL: " .. (autoKillEnabled:get() and "ON" or "OFF")})
+
+        Iris.Checkbox({"ENABLE ESP"}, {isChecked = espEnabled})
+        Iris.Text({"ESP: " .. (espEnabled:get() and "ON" or "OFF")})
     Iris.End()
 
     Iris.Tree({"TESTING"})
         Iris.Text({"TESTING AREA - ADD STUFF LATER"})
     Iris.End()
+
 end)
