@@ -1,10 +1,239 @@
 local Iris = loadstring(game:HttpGet("https://raw.githubusercontent.com/x0581/Iris-Exploit-Bundle/2.0.4/bundle.lua"))().Init(game.CoreGui)
 
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local Camera = workspace.CurrentCamera
+local LocalPlayer = Players.LocalPlayer
+
+-- States
 local aimbotEnabled = Iris.State(false)
 local autoKillEnabled = Iris.State(false)
 local espEnabled = Iris.State(false)
 local fovSize = Iris.State(60)
 
+-- FOV Circle
+local fovCircle = Drawing.new("Circle")
+fovCircle.Thickness = 2
+fovCircle.NumSides = 100
+fovCircle.Filled = false
+fovCircle.Color = Color3.fromRGB(50, 255, 100)
+fovCircle.Transparency = 0.8
+fovCircle.Visible = false
+
+-- Target Info GUI
+local targetGui = Instance.new("ScreenGui")
+targetGui.Name = "TargetInfo"
+targetGui.Parent = game.CoreGui
+targetGui.ResetOnSpawn = false
+
+local frame = Instance.new("Frame", targetGui)
+frame.Size = UDim2.new(0, 240, 0, 90)
+frame.Position = UDim2.new(0.5, -120, 0.08, 0)
+frame.BackgroundColor3 = Color3.fromRGB(20, 20, 25)
+frame.BorderColor3 = Color3.fromRGB(0, 180, 255)
+frame.Visible = false
+
+local thumb = Instance.new("ImageLabel", frame)
+thumb.Size = UDim2.new(0, 60, 0, 60)
+thumb.Position = UDim2.new(0, 10, 0.5, -30)
+thumb.BackgroundTransparency = 1
+thumb.Image = ""
+
+local nameLbl = Instance.new("TextLabel", frame)
+nameLbl.Size = UDim2.new(0, 160, 0, 25)
+nameLbl.Position = UDim2.new(0, 75, 0, 8)
+nameLbl.BackgroundTransparency = 1
+nameLbl.TextColor3 = Color3.new(1,1,1)
+nameLbl.Font = Enum.Font.GothamBold
+nameLbl.TextSize = 16
+nameLbl.Text = "TARGET: NONE"
+
+local teamLbl = Instance.new("TextLabel", frame)
+teamLbl.Size = UDim2.new(0, 160, 0, 20)
+teamLbl.Position = UDim2.new(0, 75, 0, 33)
+teamLbl.BackgroundTransparency = 1
+teamLbl.TextColor3 = Color3.new(0.7,0.7,0.7)
+teamLbl.TextSize = 13
+teamLbl.Text = "TEAM: NONE"
+
+local hpFrame = Instance.new("Frame", frame)
+hpFrame.Size = UDim2.new(0, 150, 0, 10)
+hpFrame.Position = UDim2.new(0, 75, 0, 60)
+hpFrame.BackgroundColor3 = Color3.fromRGB(60,60,60)
+
+local hpBar = Instance.new("Frame", hpFrame)
+hpBar.Size = UDim2.new(1,0,1,0)
+hpBar.BackgroundColor3 = Color3.fromRGB(0,220,60)
+
+-- Box ESP Storage
+local espObjects = {}
+
+local function createBoxESP(player)
+    if espObjects[player] or player == LocalPlayer then return end
+
+    local box = Drawing.new("Square")
+    box.Thickness = 1.5
+    box.Filled = false
+    box.Color = Color3.fromRGB(255, 80, 80)
+    box.Transparency = 1
+
+    local healthLine = Drawing.new("Line")
+    healthLine.Thickness = 2.5
+    healthLine.Color = Color3.fromRGB(0, 255, 0)
+    healthLine.Transparency = 1
+
+    local healthText = Drawing.new("Text")
+    healthText.Size = 13
+    healthText.Center = true
+    healthText.Outline = true
+    healthText.Color = Color3.fromRGB(255, 255, 255)
+
+    local nameText = Drawing.new("Text")
+    nameText.Size = 14
+    nameText.Center = true
+    nameText.Outline = true
+    nameText.Color = Color3.fromRGB(220, 220, 255)
+
+    local conn
+    conn = RunService.RenderStepped:Connect(function()
+        if not espEnabled:get() or not player.Character or not player.Character:FindFirstChild("Humanoid") or not player.Character:FindFirstChild("HumanoidRootPart") then
+            box.Visible = false
+            healthLine.Visible = false
+            healthText.Visible = false
+            nameText.Visible = false
+            return
+        end
+
+        local humanoid = player.Character.Humanoid
+        local root = player.Character.HumanoidRootPart
+        local head = player.Character:FindFirstChild("Head")
+        if not head then return end
+
+        local headPos, headVis = Camera:WorldToViewportPoint(head.Position + Vector3.new(0, 0.5, 0))
+        local rootPos, rootVis = Camera:WorldToViewportPoint(root.Position - Vector3.new(0, 3, 0))
+
+        if not headVis or not rootVis then
+            box.Visible = false
+            healthLine.Visible = false
+            healthText.Visible = false
+            nameText.Visible = false
+            return
+        end
+
+        local height = math.abs(headPos.Y - rootPos.Y)
+        local width = height * 0.6
+
+        box.Size = Vector2.new(width, height)
+        box.Position = Vector2.new(headPos.X - width/2, headPos.Y)
+        box.Visible = true
+
+        local hpRatio = humanoid.Health / humanoid.MaxHealth
+        healthLine.From = Vector2.new(box.Position.X - 6, box.Position.Y + height)
+        healthLine.To = Vector2.new(box.Position.X - 6, box.Position.Y + height * (1 - hpRatio))
+        healthLine.Color = Color3.fromHSV(hpRatio * 0.3, 1, 1)
+        healthLine.Visible = true
+
+        healthText.Text = tostring(math.floor(humanoid.Health))
+        healthText.Position = Vector2.new(box.Position.X + width/2, box.Position.Y + height + 2)
+        healthText.Visible = true
+
+        nameText.Text = player.Name
+        nameText.Position = Vector2.new(box.Position.X + width/2, box.Position.Y - 16)
+        nameText.Visible = true
+    end)
+
+    espObjects[player] = {box = box, healthLine = healthLine, healthText = healthText, name = nameText, conn = conn}
+end
+
+local function removeBoxESP(player)
+    if espObjects[player] then
+        espObjects[player].conn:Disconnect()
+        for _, obj in pairs(espObjects[player]) do
+            if obj.Destroy then obj:Destroy() end
+        end
+        espObjects[player] = nil
+    end
+end
+
+-- Target GUI Update
+local function updateTargetGui(target)
+    if target and target.Character and target.Character:FindFirstChild("Humanoid") then
+        frame.Visible = true
+        nameLbl.Text = "TARGET: " .. target.Name:upper()
+        
+        local team = target.Team and target.Team.Name or "NEUTRAL"
+        teamLbl.Text = "TEAM: " .. team:upper()
+        teamLbl.TextColor3 = target.TeamColor and target.TeamColor.Color or Color3.new(0.6,0.6,0.6)
+        
+        thumb.Image = Players:GetUserThumbnailAsync(target.UserId, Enum.ThumbnailType.HeadShot, Enum.ThumbnailSize.Size150x150)
+        
+        local hp = target.Character.Humanoid.Health
+        local max = target.Character.Humanoid.MaxHealth
+        hpBar.Size = UDim2.new(hp/max, 0, 1, 0)
+        hpBar.BackgroundColor3 = Color3.fromHSV((hp/max)*0.3, 1, 1)
+    else
+        frame.Visible = false
+    end
+end
+
+-- Closest Target Finder
+local function findClosestInFOV()
+    local center = Camera.ViewportSize / 2
+    local closest, minDist = nil, fovSize:get()
+
+    for _, plr in Players:GetPlayers() do
+        if plr ~= LocalPlayer and plr.Character and plr.Character:FindFirstChild("Head") then
+            local head = plr.Character.Head
+            local screen, onScreen = Camera:WorldToViewportPoint(head.Position)
+            if onScreen then
+                local dist = (Vector2.new(screen.X, screen.Y) - center).Magnitude
+                if dist < minDist then
+                    minDist = dist
+                    closest = plr
+                end
+            end
+        end
+    end
+    return closest
+end
+
+-- Main Loop
+RunService.RenderStepped:Connect(function()
+    -- FOV Circle
+    if aimbotEnabled:get() then
+        fovCircle.Position = Vector2.new(Camera.ViewportSize.X / 2, Camera.ViewportSize.Y / 2)
+        fovCircle.Radius = fovSize:get()
+        fovCircle.Visible = true
+    else
+        fovCircle.Visible = false
+        updateTargetGui(nil)
+    end
+
+    -- Aimbot + Target GUI
+    if aimbotEnabled:get() then
+        local target = findClosestInFOV()
+        updateTargetGui(target)
+        -- Add your actual aimbot logic here (e.g. camera manipulation or silent aim)
+    end
+end)
+
+-- ESP Setup
+espEnabled.changed:Connect(function(enabled)
+    if enabled then
+        for _, plr in Players:GetPlayers() do
+            createBoxESP(plr)
+        end
+        Players.PlayerAdded:Connect(function(plr)
+            createBoxESP(plr)
+        end)
+    else
+        for plr, _ in pairs(espObjects) do
+            removeBoxESP(plr)
+        end
+    end
+end)
+
+-- Iris GUI
 Iris:Connect(function()
     Iris.Window({"LIFE IN PRISON"})
 
@@ -33,5 +262,4 @@ Iris:Connect(function()
     Iris.Tree({"TESTING"})
         Iris.Text({"TESTING AREA - ADD STUFF LATER"})
     Iris.End()
-
 end)
