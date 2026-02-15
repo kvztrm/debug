@@ -11,16 +11,40 @@ local RunService = GetService.RunService
 local Workspace = GetService.Workspace
 local Teams = GetService.Teams
 local LocalPlayer = Players.LocalPlayer
-local RemoteEvent = ReplicatedStorage.Events.RemoteEvent
-local Pickups = Workspace.pickups
 
+-- FIXED: Safe RemoteEvent detection (tries multiple common paths)
+local RemoteEvent = nil
+local function FindRemoteEvent()
+    local paths = {
+        ReplicatedStorage:FindFirstChild("Events") and ReplicatedStorage.Events:FindFirstChild("RemoteEvent"),
+        ReplicatedStorage:FindFirstChild("Remote"),
+        ReplicatedStorage:FindFirstChild("RF") and ReplicatedStorage.RF:FindFirstChild("RemoteEvent"),
+        ReplicatedStorage:FindFirstChild("Remotes") and ReplicatedStorage.Remotes:FindFirstChild("RemoteEvent"),
+        ReplicatedStorage:FindFirstChild("Network") and ReplicatedStorage.Network:FindFirstChild("RemoteEvent")
+    }
+    
+    for _, remote in paths do
+        if remote and remote:IsA("RemoteEvent") then
+            RemoteEvent = remote
+            return true
+        end
+    end
+    return false
+end
+
+FindRemoteEvent()
+if not RemoteEvent then
+    warn("⚠️ RemoteEvent not found! Script will still teleport but can't pickup/attack.")
+end
+
+local Pickups = Workspace:WaitForChild("pickups")
 local TheTarget = nil
 
 -- Helper to get very far random position (deep null-zone territory)
 local function GetRandomFarPosition()
-    local dist = math.random(900000, 3000000)          -- millions of studs
+    local dist = math.random(900000, 3000000)
     local angle = math.random() * math.pi * 2
-    local height = math.random(-500000, 500000)        -- also vary Y a lot
+    local height = math.random(-500000, 500000)
     
     local x = math.cos(angle) * dist
     local z = math.sin(angle) * dist
@@ -33,36 +57,40 @@ RunService.Heartbeat:Connect(function()
     if not MyChar then return end
     
     local Humanoid = MyChar:FindFirstChildOfClass("Humanoid")
-    if Humanoid and Humanoid.Sit then Humanoid.Sit = false end
+    local Root = MyChar:FindFirstChild("HumanoidRootPart")
+    if not Humanoid or not Root then return end
+    
+    if Humanoid.Sit then Humanoid.Sit = false end
+    if Root.Anchored then Root.Anchored = false end
     
     local Backpack = LocalPlayer:FindFirstChild("Backpack")
     local HasKnife = (MyChar:FindFirstChild("Knife")) or (Backpack and Backpack:FindFirstChild("Knife"))
     
+    -- SAFE KNIFE PICKUP
     if not HasKnife then
         for _, Pickup in Pickups:GetChildren() do
             if Pickup.Name == "Knife" then
                 local MeshPart = Pickup:FindFirstChild("Meshes/knife1")
                 if MeshPart and MeshPart:IsA("BasePart") and MeshPart.Parent then
-                    local Root = MyChar:FindFirstChild("HumanoidRootPart")
-                    if Root then
-                        Root.CFrame = CFrame.new(MeshPart.Position)
-                        task.wait(.2)
+                    Root.CFrame = CFrame.new(MeshPart.Position)
+                    task.wait(.2)
+                    
+                    -- SAFE FIRE SERVER
+                    if RemoteEvent then
                         RemoteEvent:FireServer(12, Pickup)
-                        task.wait(.2)
-                        break
                     end
+                    task.wait(.2)
+                    break
                 end
             end
         end
         return
     end
     
-    local Root = MyChar:FindFirstChild("HumanoidRootPart")
     local Knife = MyChar:FindFirstChild("Knife") or (Backpack and Backpack:FindFirstChild("Knife"))
-    if not Root or not Knife or not Humanoid then return end
+    if not Knife then return end
     
-    if Root.Anchored then Root.Anchored = false end
-    
+    -- TARGET LOGIC
     if TheTarget and TheTarget.Parent then
         local TargetChar = TheTarget.Character
         if TargetChar then
@@ -70,6 +98,7 @@ RunService.Heartbeat:Connect(function()
             local TargetHead = TargetChar:FindFirstChild("Head")
             local TargetHumanoid = TargetChar:FindFirstChildOfClass("Humanoid")
             local ForceField = TargetChar:FindFirstChildOfClass("ForceField")
+            
             if TargetRoot and TargetHead and TargetHumanoid and TargetHumanoid.Health > 0 and not ForceField then
                 local MyTeam = LocalPlayer.Team
                 local TargetTeam = TheTarget.Team
@@ -80,29 +109,33 @@ RunService.Heartbeat:Connect(function()
                 
                 if IsPolice and TargetIsPolice then
                     if Knife.Parent == MyChar then
-                        Humanoid:UnequipTools()
+                        pcall(function() Humanoid:UnequipTools() end)
                     end
                     if (Root.Position - TargetRoot.Position).Magnitude <= 17 then
-                        RemoteEvent:FireServer(33, TargetHead)
+                        if RemoteEvent then
+                            RemoteEvent:FireServer(33, TargetHead)
+                        end
                     end
                 else
                     if Knife.Parent == Backpack then
-                        Humanoid:EquipTool(Knife)
+                        pcall(function() Humanoid:EquipTool(Knife) end)
                     end
                     if (Root.Position - TargetRoot.Position).Magnitude <= 37 then
                         local Direction = (TargetHead.Position - Root.Position).Unit
-                        RemoteEvent:FireServer(16, Knife, TargetHead, Direction)
+                        if RemoteEvent then
+                            RemoteEvent:FireServer(16, Knife, TargetHead, Direction)
+                        end
                     end
                 end
-                return   -- ← important: stay on target when we have one
+                return
             end
         end
     end
     
-    -- No valid target → start random null-zone hopping
+    -- No valid target → scan for new one + null-zone hopping
     TheTarget = nil
     
-    -- Quick scan for any new target
+    -- Quick scan for new target
     for _, Player in Players:GetPlayers() do
         if Player ~= LocalPlayer then
             local TargetChar = Player.Character
@@ -117,14 +150,15 @@ RunService.Heartbeat:Connect(function()
         end
     end
     
-    -- If still no target → random far teleport (null zone evasion)
+    -- Still no target → RANDOM NULL-ZONE TELEPORT (anti-arrest)
     if not TheTarget then
         local randomPos = GetRandomFarPosition()
         Root.CFrame = CFrame.new(randomPos)
         
-        -- Add small random wait before next big jump (makes it less predictable)
-        task.wait(math.random(4, 8) / 10)   -- 0.4 to 0.8 sec
+        -- Random delay between jumps (0.4-0.8s)
+        task.wait(math.random(4, 8) / 10)
     end
 end)
 
-warn("ok - now random null-zone hopping when no target")
+warn("✅ FIXED: Null-zone hopping + nil-safe RemoteEvent detection")
+warn("💡 Script auto-finds common RemoteEvent paths. Teleport works even if attack fails!")
