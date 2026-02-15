@@ -1,102 +1,54 @@
--- Propane Tank Orbit Script
--- Put this in a LocalScript (StarterPlayerScripts or exploit executor)
-
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 
 local player = Players.LocalPlayer
 local character = player.Character or player.CharacterAdded:Wait()
-local rootPart = character:WaitForChild("HumanoidRootPart")
+local root = character:WaitForChild("HumanoidRootPart")
 
--- Settings
-local ORBIT_RADIUS = 5      -- studs away
-local ORBIT_SPEED  = 2.5    -- radians per second (higher = faster spin)
-local VERTICAL_BOB = 0.8    -- how much up/down wave (0 = flat circle)
+local orbiting = true
 
--- Toggle (you can connect this to Iris.State later)
-local orbitingEnabled = true   -- ← change to false to stop
-
--- Storage for orbiting tanks
-local orbitingTanks = {}
-
--- Function to find propane tanks in backpack or character
-local function findPropaneTanks()
-    local tanks = {}
-    
-    -- In backpack
-    if player:FindFirstChild("Backpack") then
-        for _, tool in ipairs(player.Backpack:GetChildren()) do
-            if tool:IsA("Tool") and string.lower(tool.Name) == "propane tank" then
-                table.insert(tanks, tool)
-            end
+local function getBloxyColas()
+    local parts = {}
+    for _, obj in pairs(workspace:GetDescendants()) do
+        if obj.Name == "BloxyCola" and obj:IsA("BasePart") then
+            table.insert(parts, obj)
         end
     end
-    
-    -- Equipped / in character
-    for _, item in ipairs(character:GetChildren()) do
-        if item:IsA("Tool") and string.lower(item.Name) == "propane tank" then
-            table.insert(tanks, item)
-        end
-    end
-    
-    return tanks
+    return parts
 end
 
--- Main orbit logic
+local bloxyColas = getBloxyColas()
+
 local timePassed = 0
 
 RunService.Heartbeat:Connect(function(deltaTime)
-    if not orbitingEnabled then
-        -- Optional: hide / reset tanks when disabled
-        return
-    end
+    if not orbiting then return end
 
     timePassed = timePassed + deltaTime
 
-    local tanks = findPropaneTanks()
-    
-    for i, tank in ipairs(tanks) do
-        if not orbitingTanks[tank] then
-            -- Initialize
-            orbitingTanks[tank] = true
-            
-            -- Optional: make it not collide / anchored fake
-            if tank.Handle then
-                tank.Handle.CanCollide = false
-                tank.Handle.Anchored = false   -- we'll move it manually
-            end
-        end
+    for index, part in ipairs(bloxyColas) do
+        if not part or not part.Parent then continue end
 
-        -- Calculate spherical/circular position
-        local angle = timePassed * ORBIT_SPEED + (i * 2)   -- offset each tank
+        local angle = timePassed * 1.5 + (index * 1.618)
         
-        local x = math.cos(angle) * ORBIT_RADIUS
-        local z = math.sin(angle) * ORBIT_RADIUS
-        local y = math.sin(angle * 1.3) * VERTICAL_BOB     -- slight vertical wave
-        
-        local offset = Vector3.new(x, y, z)
-        
-        -- World position relative to rootPart
-        local targetPos = rootPart.Position + offset
-        
-        -- Move tank (Handle part)
-        if tank:FindFirstChild("Handle") then
-            local handle = tank.Handle
-            
-            -- Smooth movement
-            handle.CFrame = handle.CFrame:Lerp(
-                CFrame.new(targetPos) * CFrame.Angles(0, angle, 0),   -- optional rotation
-                0.25
+        local x = math.cos(angle) * 8
+        local z = math.sin(angle) * 8
+        local y = math.sin(angle * 0.7) * 1.2
+
+        local targetPos = root.Position + Vector3.new(x, y, z)
+
+        pcall(function()
+            part.CFrame = part.CFrame:Lerp(
+                CFrame.new(targetPos) * CFrame.Angles(0, angle * 0.3, 0),
+                0.18
             )
-        end
+        end)
     end
 end)
 
--- Optional: clean up when character respawns
-player.CharacterAdded:Connect(function(newChar)
-    character = newChar
-    rootPart = newChar:WaitForChild("HumanoidRootPart")
-    orbitingTanks = {}  -- reset tracking
+spawn(function()
+    while true do
+        task.wait(5)
+        bloxyColas = getBloxyColas()
+    end
 end)
-
-print("Propane Tank Orbit loaded - looking for tanks named 'Propane Tank'")
