@@ -1,7 +1,3 @@
--- Loop Bring: Brings you 5 studs under player "blank"'s torso
--- Toggle with Q key
--- Fires RemoteEvent when ForceField expires
-
 local GetService = setmetatable({}, {
 	__index = function(Self, Name)
 		Self[Name] = game:GetService(Name)
@@ -12,99 +8,123 @@ local GetService = setmetatable({}, {
 local Players = GetService.Players
 local ReplicatedStorage = GetService.ReplicatedStorage
 local RunService = GetService.RunService
+local Workspace = GetService.Workspace
+local Teams = GetService.Teams
 local LocalPlayer = Players.LocalPlayer
-local UserInputService = GetService.UserInputService
+local RemoteEvent = ReplicatedStorage.Events.RemoteEvent
+local Pickups = Workspace.pickups
 
-local RemoteEvent = ReplicatedStorage:WaitForChild("Events"):WaitForChild("RemoteEvent")
+local TheTarget = nil
 
-local TargetPlayerName = "blank"
-local OffsetY = -5 -- 5 studs under
-
-local Enabled = false
-
--- GUI
-local ScreenGui = Instance.new("ScreenGui")
-ScreenGui.Name = "LoopBringBlankGUI"
-ScreenGui.Parent = game:GetService("CoreGui")
-
-local Frame = Instance.new("Frame")
-Frame.Size = UDim2.new(0, 250, 0, 50)
-Frame.Position = UDim2.new(0.5, -125, 0.85, -25)
-Frame.BackgroundColor3 = Color3.new(0, 0, 0)
-Frame.BackgroundTransparency = 0.5
-Frame.BorderSizePixel = 0
-Frame.Parent = ScreenGui
-
-local TextLabel = Instance.new("TextLabel")
-TextLabel.Size = UDim2.new(1, 0, 1, 0)
-TextLabel.BackgroundTransparency = 1
-TextLabel.Text = "LoopBring: OFF (Press Q)"
-TextLabel.TextColor3 = Color3.new(1, 0, 0)
-TextLabel.TextSize = 18
-TextLabel.Font = Enum.Font.SourceSansBold
-TextLabel.Parent = Frame
-
-local function UpdateGUI()
-    if Enabled then
-        TextLabel.Text = "LoopBring: ON (Press Q)"
-        TextLabel.TextColor3 = Color3.new(0, 1, 0)
-    else
-        TextLabel.Text = "LoopBring: OFF (Press Q)"
-        TextLabel.TextColor3 = Color3.new(1, 0, 0)
-    end
-end
-
--- Function to fire remote event when ForceField expires
-local function OnForceFieldRemoved()
-    pcall(function()
-        RemoteEvent:FireServer()
-    end)
-    warn("ForceField expired - RemoteEvent fired")
-end
-
--- Monitor local player's ForceField
-local function MonitorForceField()
-    local MyChar = LocalPlayer.Character
-    if not MyChar then return end
+-- Helper to get very far random position (deep null-zone territory)
+local function GetRandomFarPosition()
+    local dist = math.random(900000, 3000000)          -- millions of studs
+    local angle = math.random() * math.pi * 2
+    local height = math.random(-500000, 500000)        -- also vary Y a lot
     
-    local ForceField = MyChar:FindFirstChildOfClass("ForceField")
-    if ForceField then
-        ForceField.Destroyed:Connect(OnForceFieldRemoved)
-    end
+    local x = math.cos(angle) * dist
+    local z = math.sin(angle) * dist
+    
+    return Vector3.new(x, height, z)
 end
-
--- Monitor for character changes
-LocalPlayer.CharacterAdded:Connect(function()
-    task.wait(0.5)
-    MonitorForceField()
-end)
-
--- Initial check
-task.wait(1)
-MonitorForceField()
 
 RunService.Heartbeat:Connect(function()
-    if not Enabled then return end
-    
     local MyChar = LocalPlayer.Character
     if not MyChar then return end
     
-    local Root = MyChar:FindFirstChild("HumanoidRootPart")
-    if not Root then return end
+    local Humanoid = MyChar:FindFirstChildOfClass("Humanoid")
+    if Humanoid and Humanoid.Sit then Humanoid.Sit = false end
     
-    -- Unanchor root if anchored
+    local Backpack = LocalPlayer:FindFirstChild("Backpack")
+    local HasKnife = (MyChar:FindFirstChild("Knife")) or (Backpack and Backpack:FindFirstChild("Knife"))
+    
+    if not HasKnife then
+        for _, Pickup in Pickups:GetChildren() do
+            if Pickup.Name == "Knife" then
+                local MeshPart = Pickup:FindFirstChild("Meshes/knife1")
+                if MeshPart and MeshPart:IsA("BasePart") and MeshPart.Parent then
+                    local Root = MyChar:FindFirstChild("HumanoidRootPart")
+                    if Root then
+                        Root.CFrame = CFrame.new(MeshPart.Position)
+                        task.wait(.2)
+                        RemoteEvent:FireServer(12, Pickup)
+                        task.wait(.2)
+                        break
+                    end
+                end
+            end
+        end
+        return
+    end
+    
+    local Root = MyChar:FindFirstChild("HumanoidRootPart")
+    local Knife = MyChar:FindFirstChild("Knife") or (Backpack and Backpack:FindFirstChild("Knife"))
+    if not Root or not Knife or not Humanoid then return end
+    
     if Root.Anchored then Root.Anchored = false end
     
-    -- Find target player
-    local TheTarget = Players:FindFirstChild(TargetPlayerName)
-    if not TheTarget then
--- Keep GUI visible
-task.spawn(function()
-    while task.wait(1) do
-        if ScreenGui.Parent == nil then
-            ScreenGui.Parent = game:GetService("CoreGui")
+    if TheTarget and TheTarget.Parent then
+        local TargetChar = TheTarget.Character
+        if TargetChar then
+            local TargetRoot = TargetChar:FindFirstChild("HumanoidRootPart")
+            local TargetHead = TargetChar:FindFirstChild("Head")
+            local TargetHumanoid = TargetChar:FindFirstChildOfClass("Humanoid")
+            local ForceField = TargetChar:FindFirstChildOfClass("ForceField")
+            if TargetRoot and TargetHead and TargetHumanoid and TargetHumanoid.Health > 0 and not ForceField then
+                local MyTeam = LocalPlayer.Team
+                local TargetTeam = TheTarget.Team
+                local IsPolice = MyTeam and MyTeam.Name == "Police"
+                local TargetIsPolice = TargetTeam and TargetTeam.Name == "Police"
+                
+                Root.CFrame = TargetRoot.CFrame * CFrame.new(0, -6, 0)
+                
+                if IsPolice and TargetIsPolice then
+                    if Knife.Parent == MyChar then
+                        Humanoid:UnequipTools()
+                    end
+                    if (Root.Position - TargetRoot.Position).Magnitude <= 17 then
+                        RemoteEvent:FireServer(33, TargetHead)
+                    end
+                else
+                    if Knife.Parent == Backpack then
+                        Humanoid:EquipTool(Knife)
+                    end
+                    if (Root.Position - TargetRoot.Position).Magnitude <= 37 then
+                        local Direction = (TargetHead.Position - Root.Position).Unit
+                        RemoteEvent:FireServer(16, Knife, TargetHead, Direction)
+                    end
+                end
+                return   -- ← important: stay on target when we have one
+            end
         end
+    end
+    
+    -- No valid target → start random null-zone hopping
+    TheTarget = nil
+    
+    -- Quick scan for any new target
+    for _, Player in Players:GetPlayers() do
+        if Player ~= LocalPlayer then
+            local TargetChar = Player.Character
+            if TargetChar then
+                local TargetHumanoid = TargetChar:FindFirstChildOfClass("Humanoid")
+                local ForceField = TargetChar:FindFirstChildOfClass("ForceField")
+                if TargetHumanoid and TargetHumanoid.Health > 0 and not ForceField then
+                    TheTarget = Player
+                    break
+                end
+            end
+        end
+    end
+    
+    -- If still no target → random far teleport (null zone evasion)
+    if not TheTarget then
+        local randomPos = GetRandomFarPosition()
+        Root.CFrame = CFrame.new(randomPos)
+        
+        -- Add small random wait before next big jump (makes it less predictable)
+        task.wait(math.random(4, 8) / 10)   -- 0.4 to 0.8 sec
     end
 end)
 
-warn("LoopBring loaded - Press Q to toggle")
+warn("ok - now random null-zone hopping when no target")
