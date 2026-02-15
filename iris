@@ -1,114 +1,197 @@
--- Iris UI Menu with Dropdown to control Simple Box ESP + Aimbot features
+-- Modified version of https://raw.githubusercontent.com/kvztrm/debug/511d11833427e5b6312350ec89532ab64013c205/random
+-- Removed all hitbox expander functions (expandHitboxes, resetHitboxes, hitboxStore, etc.)
+-- Added Iris UI menu with dropdown + toggle buttons
+-- Box ESP now scales size based on distance (smaller when far away)
 -- Paste & execute in your executor
 
 local Iris = loadstring(game:HttpGet("https://raw.githubusercontent.com/x0581/Iris-Exploit-Bundle/2.0.4/bundle.lua"))().Init(game.CoreGui)
 
--- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
--- ESP + Aimbot Settings & Logic (from your provided code)
--- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
-local TweenService = game:GetService("TweenService")
 local Workspace = game:GetService("Workspace")
 local Camera = Workspace.CurrentCamera
 local LocalPlayer = Players.LocalPlayer
-local Mouse = LocalPlayer:GetMouse()
 
 local settings = {
-    enabled = false,       -- Aimbot toggle
-    espEnabled = false,    -- ESP toggle
-    fov = 80,
-    aimKey = Enum.KeyCode.Q,
-    espKey = Enum.KeyCode.Z,
-    aimPart = "Head",
-    smoothing = 0.05,
-    wallCheck = false,
-    teamCheck = false
+    espEnabled = false,
+    wallCheck = false,     -- still here if you want to use it later
+    teamCheck = false,
+    espKey = Enum.KeyCode.Z
 }
 
-local currentTarget = nil
 local espDrawings = {}
 
--- (Paste all your functions here: worldToScreen, getScreenSize, isTargetVisible, findTargetAtMouse,
--- createPlayerESP, clearPlayerESP, toggleESP, getPlayerTeamInfo, isSameTeam, aimAt, updateTargetDisplay)
+-- ── Helper Functions ──
+local function worldToScreen(worldPoint)
+    local screenPos, onScreen = Camera:WorldToViewportPoint(worldPoint)
+    return Vector2.new(screenPos.X, screenPos.Y), onScreen
+end
 
--- [IMPORTANT: You MUST copy-paste ALL the functions and loops from your original code here]
--- For brevity, assuming you insert them right after this comment block.
--- The dropdown will control: ESP toggle, Aimbot toggle, Wall Check, Team Check, Aim Part, FOV
+local function isSameTeam(player)
+    if not settings.teamCheck then return false end
+    local myTeam = LocalPlayer.Team
+    if not myTeam then return false end
+    return player.Team and player.Team == myTeam
+end
 
--- Example placeholders (replace with your actual code):
-function toggleESP() settings.espEnabled = not settings.espEnabled end
--- ... add the rest ...
+-- ── ESP Creation (distance-scaled box) ──
+local function createPlayerESP(player)
+    if espDrawings[player] then return end
 
--- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
--- Iris UI with Dropdown Controls
--- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    local box = Drawing.new("Square")
+    box.Thickness = 1.5
+    box.Color = Color3.fromRGB(255, 80, 80)
+    box.Filled = false
+    box.Transparency = 1
+    box.Visible = false
 
+    local name = Drawing.new("Text")
+    name.Size = 13
+    name.Color = Color3.fromRGB(255, 255, 255)
+    name.Center = true
+    name.Outline = true
+    name.Visible = false
+
+    local conn
+    conn = RunService.RenderStepped:Connect(function()
+        if not settings.espEnabled or not player.Character or not player.Character:FindFirstChild("Humanoid") or not player.Character:FindFirstChild("HumanoidRootPart") or not player.Character:FindFirstChild("Head") then
+            box.Visible = false
+            name.Visible = false
+            return
+        end
+
+        local humanoid = player.Character.Humanoid
+        local root = player.Character.HumanoidRootPart
+        local head = player.Character.Head
+
+        local rootPos, rootOnScreen = worldToScreen(root.Position)
+        local headPos, headOnScreen = worldToScreen(head.Position)
+
+        if not rootOnScreen or not headOnScreen then
+            box.Visible = false
+            name.Visible = false
+            return
+        end
+
+        -- Distance-based scaling
+        local distance = (Camera.CFrame.Position - root.Position).Magnitude
+        local scaleFactor = math.clamp(1000 / (distance + 50), 0.4, 2.5)  -- farther = smaller box
+
+        local height = math.abs(headPos.Y - rootPos.Y) * 1.2 * scaleFactor
+        local width = height * 0.55 * scaleFactor
+
+        local centerX = (headPos.X + rootPos.X) / 2
+        local topY = headPos.Y - (height * 0.1)
+        local bottomY = rootPos.Y + (height * 0.1)
+
+        box.Size = Vector2.new(width, height)
+        box.Position = Vector2.new(centerX - width / 2, topY)
+        box.Visible = true
+
+        name.Text = player.Name .. " [" .. math.floor(distance) .. "m]"
+        name.Position = Vector2.new(centerX, topY - 16 * scaleFactor)
+        name.Size = math.clamp(13 * scaleFactor, 9, 16)
+        name.Visible = true
+    end)
+
+    espDrawings[player] = {conn = conn, box = box, name = name}
+end
+
+local function clearPlayerESP(player)
+    if espDrawings[player] then
+        if espDrawings[player].conn then espDrawings[player].conn:Disconnect() end
+        if espDrawings[player].box then espDrawings[player].box:Remove() end
+        if espDrawings[player].name then espDrawings[player].name:Remove() end
+        espDrawings[player] = nil
+    end
+end
+
+local function toggleESP()
+    settings.espEnabled = not settings.espEnabled
+
+    if settings.espEnabled then
+        for _, player in ipairs(Players:GetPlayers()) do
+            if player ~= LocalPlayer and not isSameTeam(player) then
+                createPlayerESP(player)
+            end
+        end
+
+        -- Handle new players
+        Players.PlayerAdded:Connect(function(player)
+            if settings.espEnabled and player ~= LocalPlayer and not isSameTeam(player) then
+                createPlayerESP(player)
+            end
+        end)
+    else
+        for player, _ in pairs(espDrawings) do
+            clearPlayerESP(player)
+        end
+    end
+end
+
+-- Cleanup on player leaving
+Players.PlayerRemoving:Connect(function(player)
+    clearPlayerESP(player)
+end)
+
+-- Keybind
+UserInputService.InputBegan:Connect(function(input)
+    if input.KeyCode == settings.espKey then
+        toggleESP()
+    end
+end)
+
+-- ── Iris UI Menu ──
 Iris:Connect(function()
-    Iris.Window({"ESP & Aimbot Controls"}, { [Iris.Args.Window.NoResize] = true })
-        Iris.Text({"Simple Box ESP + Aimbot Menu"})
+    Iris.Window({"ESP Controls"}, {NoCollapse = true, NoResize = true})
+        Iris.Text({"Box ESP Menu"})
 
-        -- Dropdown: Main Controls
-        Iris.Combo({"Main Toggle"}, {
-            "Toggle Aimbot (Q key also works)",
-            "Toggle ESP (Z key also works)",
-            "Toggle Wall Check",
+        -- Dropdown for quick actions
+        local selectedAction = Iris.State("Select Action")
+        Iris.Combo({"Actions", selectedAction}, {
+            "Toggle ESP",
             "Toggle Team Check",
-            "Switch Aim Part (Head ↔ Torso)",
-            "Increase FOV (+5)",
-            "Decrease FOV (-5)"
+            "Toggle Wall Check (placeholder)",
+            "Clear All ESP"
         })
 
-        -- Handle selection (Iris Combo calls back via state or manual check – here we use simple if)
-        -- Note: In this bundle version, Combo doesn't have direct callback; we poll state or use button style.
-        -- For simplicity, use separate buttons instead of one mega-dropdown (cleaner UX)
-
-        if Iris.Button({"Toggle Aimbot"}).clicked() then
-            settings.enabled = not settings.enabled
-            Iris.Text({"Aimbot: " .. (settings.enabled and "ON" or "OFF")})
+        if Iris.Button({"Execute Selected"}).clicked() then
+            local action = selectedAction:get()
+            if action == "Toggle ESP" then
+                toggleESP()
+            elseif action == "Toggle Team Check" then
+                settings.teamCheck = not settings.teamCheck
+                -- Refresh ESP when team check changes
+                if settings.espEnabled then
+                    toggleESP()
+                    toggleESP()
+                end
+            elseif action == "Toggle Wall Check (placeholder)" then
+                settings.wallCheck = not settings.wallCheck
+            elseif action == "Clear All ESP" then
+                for player, _ in pairs(espDrawings) do
+                    clearPlayerESP(player)
+                end
+            end
         end
 
-        if Iris.Button({"Toggle ESP"}).clicked() then
+        -- Direct toggle buttons
+        if Iris.Button({"Toggle ESP (" .. (settings.espEnabled and "ON" or "OFF") .. ")"}).clicked() then
             toggleESP()
-            Iris.Text({"ESP: " .. (settings.espEnabled and "ON" or "OFF")})
         end
 
-        if Iris.Button({"Toggle Wall Check"}).clicked() then
-            settings.wallCheck = not settings.wallCheck
-            Iris.Text({"Wall Check: " .. (settings.wallCheck and "ON" or "OFF")})
-        end
-
-        if Iris.Button({"Toggle Team Check"}).clicked() then
+        if Iris.Button({"Team Check (" .. (settings.teamCheck and "ON" or "OFF") .. ")"}).clicked() then
             settings.teamCheck = not settings.teamCheck
-            Iris.Text({"Team Check: " .. (settings.teamCheck and "ON" or "OFF")})
         end
 
-        if Iris.Button({"Switch Aim Part"}).clicked() then
-            settings.aimPart = settings.aimPart == "Head" and "HumanoidRootPart" or "Head"
-            Iris.Text({"Aim Part: " .. settings.aimPart})
-        end
-
-        if Iris.Button({"FOV +5"}).clicked() then
-            settings.fov = math.min(settings.fov + 5, 200)
-            Iris.Text({"FOV: " .. settings.fov})
-        end
-
-        if Iris.Button({"FOV -5"}).clicked() then
-            settings.fov = math.max(settings.fov - 5, 20)
-            Iris.Text({"FOV: " .. settings.fov})
-        end
-
-        -- Status labels
-        Iris.Text({"Aimbot Active: " .. tostring(settings.enabled)})
-        Iris.Text({"ESP Active: " .. tostring(settings.espEnabled)})
-        Iris.Text({"Wall Check: " .. tostring(settings.wallCheck)})
-        Iris.Text({"Current Aim Part: " .. settings.aimPart})
-        Iris.Text({"FOV: " .. settings.fov})
+        Iris.Text({" "})
+        Iris.Text({"Status:"})
+        Iris.Text({"ESP Active: " .. (settings.espEnabled and "Yes" or "No")})
+        Iris.Text({"Team Check: " .. (settings.teamCheck and "Yes" or "No")})
+        Iris.Text({"Z = Toggle ESP (keybind still works)"})
 
     Iris.End()
 end)
 
--- Keep your original keybinds and loops running outside Iris
--- (Your RunService connections, InputBegan, etc. go here as before)
+print("ESP Loaded - Z to toggle | Iris menu opened")
