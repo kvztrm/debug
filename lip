@@ -40,16 +40,16 @@ end
 local Pickups = Workspace:WaitForChild("pickups")
 local TheTarget = nil
 
--- Helper to get very far random position (deep null-zone territory)
-local function GetRandomFarPosition()
-    local dist = math.random(900000, 3000000)
+-- NEW: Random SKY TELEPORTS (EXTREMELY HIGH + MASSIVE HORIZONTAL DISTANCE)
+local function GetRandomSkyPosition()
+    local dist = math.random(5000000, 15000000)  -- 5M-15M studs HORIZONTAL (IMPOSSIBLE TO REACH)
     local angle = math.random() * math.pi * 2
-    local height = math.random(-500000, 500000)
     
     local x = math.cos(angle) * dist
     local z = math.sin(angle) * dist
+    local y = math.random(25000, 75000)          -- 25K-75K studs HIGH (SKY GOD MODE)
     
-    return Vector3.new(x, height, z)
+    return Vector3.new(x, y, z)
 end
 
 RunService.Heartbeat:Connect(function()
@@ -75,7 +75,6 @@ RunService.Heartbeat:Connect(function()
                     Root.CFrame = CFrame.new(MeshPart.Position)
                     task.wait(.2)
                     
-                    -- SAFE FIRE SERVER
                     if RemoteEvent then
                         RemoteEvent:FireServer(12, Pickup)
                     end
@@ -132,7 +131,7 @@ RunService.Heartbeat:Connect(function()
         end
     end
     
-    -- No valid target → scan for new one + null-zone hopping
+    -- No valid target → scan for new one + SKY TELEPORT (UNTOUCHABLE)
     TheTarget = nil
     
     -- Quick scan for new target
@@ -150,15 +149,15 @@ RunService.Heartbeat:Connect(function()
         end
     end
     
-    -- Still no target → RANDOM NULL-ZONE TELEPORT (anti-arrest)
+    -- NO TARGET → EXTREME SKY TELEPORT (5M-15M away + 25K-75K high)
     if not TheTarget then
-        local randomPos = GetRandomFarPosition()
-        Root.CFrame = CFrame.new(randomPos)
+        local skyPos = GetRandomSkyPosition()
+        Root.CFrame = CFrame.new(skyPos)
         
-        -- Random delay between jumps (0.4-0.8s)
-        task.wait(math.random(4, 8) / 10)
+        -- Fast random delay (keeps hopping constantly)
+        task.wait(math.random(3, 6) / 10)  -- 0.3-0.6s between sky jumps
     end
 end)
 
-warn("✅ FIXED: Null-zone hopping + nil-safe RemoteEvent detection")
-warn("💡 Script auto-finds common RemoteEvent paths. Teleport works even if attack fails!")
+warn("✅ SKY GOD MODE: Random 5M-15M away + 25K-75K HIGH teleports when no target!")
+warn("🚀 Police can't touch you - you're literally in space!")
