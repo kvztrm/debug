@@ -1,5 +1,5 @@
 local Iris = loadstring(game:HttpGet("https://raw.githubusercontent.com/SirMallard/Iris/main/Iris.lua"))()
-Iris.Init(game.CoreGui)
+Iris.Init(game.CoreGui)  -- Change to PlayerGui if needed
 
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
@@ -10,13 +10,13 @@ local Camera = Workspace.CurrentCamera
 local LocalPlayer = Players.LocalPlayer
 local Mouse = LocalPlayer:GetMouse()
 
--- States from your GUI
+-- States
 local aimbotEnabled   = Iris.State(false)
-local autoKillEnabled = Iris.State(false)  -- placeholder, no logic yet
+local autoKillEnabled = Iris.State(false)
 local espEnabled      = Iris.State(false)
-local fovSize         = Iris.State(80)     -- default from script
+local fovSize         = Iris.State(80)
 
--- Aimbot settings (from the provided script)
+-- Aimbot settings
 local aimSettings = {
     aimPart   = "Head",
     smoothing = 0.05,
@@ -32,7 +32,7 @@ fovCircle.Filled       = false
 fovCircle.Color        = Color3.fromRGB(0, 255, 100)
 fovCircle.Visible      = false
 
--- Target Info GUI (ripped + adapted)
+-- Target Info GUI
 local screenGui = Instance.new("ScreenGui")
 screenGui.Name = "TargetInfo"
 screenGui.IgnoreGuiInset = true
@@ -94,7 +94,7 @@ healthText.TextSize            = 11
 healthText.TextXAlignment      = Enum.TextXAlignment.Right
 healthText.Text                = "100 HP"
 
--- Box ESP (ripped functions + adapted)
+-- Box ESP tables/functions (simplified from your GitHub rip)
 local espDrawings = {}
 
 local function worldToScreen(worldPoint)
@@ -146,11 +146,7 @@ local function createPlayerESP(player)
 
     local conn = RunService.RenderStepped:Connect(function()
         if not espEnabled:get() or not player.Character then
-            box.Visible = false
-            hpLine.Visible = false
-            name.Visible = false
-            hpNum.Visible = false
-            distanceTxt.Visible = false
+            box.Visible = false; hpLine.Visible = false; name.Visible = false; hpNum.Visible = false; distanceTxt.Visible = false
             return
         end
 
@@ -164,11 +160,7 @@ local function createPlayerESP(player)
         local rootPos, rootOn = worldToScreen(rootPart.Position)
 
         if not headOn or not rootOn then
-            box.Visible = false
-            hpLine.Visible = false
-            name.Visible = false
-            hpNum.Visible = false
-            distanceTxt.Visible = false
+            box.Visible = false; hpLine.Visible = false; name.Visible = false; hpNum.Visible = false; distanceTxt.Visible = false
             return
         end
 
@@ -216,17 +208,13 @@ end
 local function clearPlayerESP(player)
     if espDrawings[player] then
         for _, obj in ipairs(espDrawings[player]) do
-            if typeof(obj) == "RBXScriptConnection" then
-                obj:Disconnect()
-            elseif obj.Visible ~= nil then
-                obj.Visible = false
-            end
+            if typeof(obj) == "RBXScriptConnection" then obj:Disconnect() else obj.Visible = false end
         end
         espDrawings[player] = nil
     end
 end
 
--- Target GUI update (ripped)
+-- Target GUI update
 local function updateTargetDisplay(player)
     if not player or not player.Character then
         targetFrame.Visible = false
@@ -244,22 +232,23 @@ local function updateTargetDisplay(player)
 
     targetName.Text = "TARGET: " .. player.Name:upper()
 
-    local teamName, teamColor = player.Team and player.Team.Name or "NEUTRAL", player.Team and player.Team.TeamColor.Color or Color3.fromRGB(150, 150, 150)
+    local teamName = player.Team and player.Team.Name or "NEUTRAL"
     targetTeam.Text = "TEAM: " .. teamName:upper()
-    targetTeam.TextColor3 = teamColor
+    targetTeam.TextColor3 = player.Team and player.Team.TeamColor.Color or Color3.fromRGB(150, 150, 150)
 
-    local thumbSuccess, thumbUrl = pcall(Players.GetUserThumbnailAsync, Players, player.UserId, Enum.ThumbnailType.HeadShot, Enum.ThumbnailSize.Size150x150)
-    profileImage.Image = thumbSuccess and thumbUrl or ""
+    local success, url = pcall(function()
+        return Players:GetUserThumbnailAsync(player.UserId, Enum.ThumbnailType.HeadShot, Enum.ThumbnailSize.Size150x150)
+    end)
+    profileImage.Image = success and url or ""
 end
 
--- Find closest target in FOV (adapted for mouse position check)
+-- Find closest target near mouse (within FOV)
 local function findTarget()
     local mousePos = Vector2.new(Mouse.X, Mouse.Y)
     local myRoot = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
     if not myRoot then return nil end
 
-    local closest = nil
-    local closestDist = math.huge
+    local closest, closestDist = nil, fovSize:get()
 
     for _, p in ipairs(Players:GetPlayers()) do
         if p ~= LocalPlayer and p.Character and not isSameTeam(p) then
@@ -268,22 +257,18 @@ local function findTarget()
                 local screenPos, onScreen = worldToScreen(part.Position)
                 if onScreen then
                     local distToMouse = (screenPos - mousePos).Magnitude
-                    if distToMouse <= fovSize:get() then
-                        local distToMe = (part.Position - myRoot.Position).Magnitude
-                        if distToMe < closestDist then
-                            closestDist = distToMe
-                            closest = p
-                        end
+                    if distToMouse <= closestDist then
+                        closestDist = distToMouse
+                        closest = p
                     end
                 end
             end
         end
     end
-
     return closest
 end
 
--- Aimbot logic (ripped tween camera)
+-- Aim lock (tween camera + set Mouse.Hit)
 local function aimAt(target)
     if not target or not target.Character then return end
 
@@ -294,14 +279,14 @@ local function aimAt(target)
     local currentCFrame = Camera.CFrame
     local targetCFrame = CFrame.new(currentCFrame.Position, targetPos)
 
-    local tweenInfo = TweenInfo.new(aimSettings.smoothing, Enum.EasingStyle.Linear, Enum.EasingDirection.Out)
+    local tweenInfo = TweenInfo.new(aimSettings.smoothing, Enum.EasingStyle.Linear)
     TweenService:Create(Camera, tweenInfo, {CFrame = targetCFrame}):Play()
     Mouse.Hit = CFrame.new(targetPos)
 end
 
 -- Main loop
 RunService.RenderStepped:Connect(function()
-    -- FOV circle update
+    -- FOV circle
     if aimbotEnabled:get() then
         fovCircle.Position = Vector2.new(Camera.ViewportSize.X / 2, Camera.ViewportSize.Y / 2)
         fovCircle.Radius   = fovSize:get()
@@ -313,10 +298,7 @@ RunService.RenderStepped:Connect(function()
     if aimbotEnabled:get() then
         local target = findTarget()
         updateTargetDisplay(target)
-
-        if target then
-            aimAt(target)  -- actual aim lock
-        end
+        if target then aimAt(target) end
     else
         updateTargetDisplay(nil)
     end
@@ -325,18 +307,14 @@ end)
 -- ESP toggle
 espEnabled.changed:Connect(function(enabled)
     if enabled then
-        for _, p in ipairs(Players:GetPlayers()) do
-            createPlayerESP(p)
-        end
+        for _, p in ipairs(Players:GetPlayers()) do createPlayerESP(p) end
         Players.PlayerAdded:Connect(createPlayerESP)
     else
-        for p in pairs(espDrawings) do
-            clearPlayerESP(p)
-        end
+        for p in pairs(espDrawings) do clearPlayerESP(p) end
     end
 end)
 
--- Iris GUI (your structure, all caps)
+-- GUI
 Iris:Connect(function()
     Iris.Window({"LIFE IN PRISON"})
 
@@ -344,15 +322,7 @@ Iris:Connect(function()
         Iris.Checkbox({"TOGGLE AIMBOT / FOV"}, {isChecked = aimbotEnabled})
         Iris.Text({"AIMBOT: " .. (aimbotEnabled:get() and "ON" or "OFF")})
 
-        Iris.SliderNum(
-            {"FOV SIZE"},
-            {
-                number    = fovSize,
-                min       = 30,
-                max       = 300,   -- wider range possible
-                increment = 5
-            }
-        )
+        Iris.SliderNum({"FOV SIZE"}, {number = fovSize, min = 30, max = 300, increment = 5})
         Iris.Text({"CURRENT FOV: " .. math.floor(fovSize:get())})
 
         Iris.Checkbox({"ENABLE AUTOKILL"}, {isChecked = autoKillEnabled})
