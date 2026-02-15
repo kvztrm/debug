@@ -2,32 +2,13 @@ local Iris = loadstring(game:HttpGet("https://raw.githubusercontent.com/x0581/Ir
 
 local aimbotEnabled = Iris.State(false)
 local fovSize       = Iris.State(60)
-local selectedTheme = Iris.State("Dark (Default)")
-
--- Apply theme changes ONLY when the selection actually changes (prevents loop/refresh spam)
-selectedTheme.changed:Connect(function(newTheme)
-    if newTheme == "Dark (Default)" then
-        Iris.UpdateGlobalConfig(Iris.TemplateConfig.colorDark)
-        Iris.UpdateGlobalConfig(Iris.TemplateConfig.sizeDefault)
-    elseif newTheme == "Light Mode" then
-        Iris.UpdateGlobalConfig(Iris.TemplateConfig.colorLight)
-        Iris.UpdateGlobalConfig(Iris.TemplateConfig.sizeDefault)
-    elseif newTheme == "Dark + Spacious" then
-        Iris.UpdateGlobalConfig(Iris.TemplateConfig.colorDark)
-        Iris.UpdateGlobalConfig(Iris.TemplateConfig.sizeClear)
-    elseif newTheme == "Light + Spacious" then
-        Iris.UpdateGlobalConfig(Iris.TemplateConfig.colorLight)
-        Iris.UpdateGlobalConfig(Iris.TemplateConfig.sizeClear)
-    end
-    -- Optional: Iris.ForceRefresh() is already called internally, but you can add it if visuals lag
-end)
 
 Iris:Connect(function()
     Iris.Window({"LIFE IN PRISON"})
 
     Iris.Tree({"MAIN"})
         Iris.Checkbox({"TOGGLE AIMBOT / FOV"}, {isChecked = aimbotEnabled})
-        Iris.Text({"Aimbot: " .. (aimbotEnabled:get() and "ON" or "OFF")})
+        Iris.Text({"AIMBOT: " .. (aimbotEnabled:get() and "ON" or "OFF")})
         
         Iris.SliderNum(
             {"FOV SIZE"}, 
@@ -38,41 +19,10 @@ Iris:Connect(function()
                 increment = 1
             }
         )
-        Iris.Text({"Current FOV: " .. math.floor(fovSize:get() + 0.5)})
+        Iris.Text({"CURRENT FOV: " .. math.floor(fovSize:get() + 0.5)})
     Iris.End()
 
     Iris.Tree({"TESTING"})
-        Iris.Text({"Testing area - add stuff later"})
-    Iris.End()
-
-    Iris.Tree({"SETTINGS"})
-        Iris.Text({"Current Style: " .. selectedTheme:get()})
-
-        Iris.Text({"Quick Theme Switch:"})
-
-        if Iris.Button({"Dark (Default)"}).clicked() then
-            selectedTheme:set("Dark (Default)")
-        end
-
-        if Iris.Button({"Light Mode"}).clicked() then
-            selectedTheme:set("Light Mode")
-        end
-
-        if Iris.Button({"Dark + Spacious"}).clicked() then
-            selectedTheme:set("Dark + Spacious")
-        end
-
-        if Iris.Button({"Light + Spacious"}).clicked() then
-            selectedTheme:set("Light + Spacious")
-        end
-
-        -- Dropdown alternative (syncs with same state)
-        Iris.Dropdown(
-            {"Or select from list:"},
-            {
-                Options   = {"Dark (Default)", "Light Mode", "Dark + Spacious", "Light + Spacious"},
-                Selection = selectedTheme
-            }
-        )
+        Iris.Text({"TESTING AREA - ADD STUFF LATER"})
     Iris.End()
 end)
