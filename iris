@@ -1,0 +1,257 @@
+-- Iris UI Menu with Aimbot and ESP
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
+local TweenService = game:GetService("TweenService")
+local Workspace = game:GetService("Workspace")
+local Camera = Workspace.CurrentCamera
+local LocalPlayer = Players.LocalPlayer
+local Mouse = LocalPlayer:GetMouse()
+
+-- Load Iris UI
+local Iris = loadstring(game:HttpGet("https://raw.githubusercontent.com/x0581/Iris-Exploit-Bundle/2.0.4/bundle.lua"))().Init(game.CoreGui)
+
+-- Settings
+local settings = {
+    enabled = false,
+    espEnabled = false,
+    fov = 80,
+    aimKey = Enum.KeyCode.Q,
+    aimPart = "Head",
+    smoothing = 0.05,
+    teamCheck = false
+}
+
+local currentTarget = nil
+local espDrawings = {}
+
+-- Create Iris Window
+Iris:Window({
+    Title = "Cheat Menu",
+    Size = Vector2.new(280, 200)
+})
+
+Iris:Text({
+    Text = "Controls: Q = Aimbot | Z = ESP | E = Switch Part"
+})
+
+local aimbotToggle = false
+local espToggle = false
+
+Iris:Toggle({
+    Text = "Aimbot Toggle",
+    Value = aimbotToggle,
+    OnChange = function(val)
+        aimbotToggle = val
+        settings.enabled = val
+        if settings.enabled then
+            currentTarget = findTargetAtMouse()
+            if currentTarget then aimAt(currentTarget) end
+        else
+            currentTarget = nil
+        end
+    end
+})
+
+Iris:Toggle({
+    Text = "ESP Toggle",
+    Value = espToggle,
+    OnChange = function(val)
+        espToggle = val
+        settings.espEnabled = val
+        if settings.espEnabled then
+            for _, p in ipairs(Players:GetPlayers()) do
+                if p ~= LocalPlayer then createPlayerESP(p) end
+            end
+            Players.PlayerAdded:Connect(function(p) createPlayerESP(p) end)
+        else
+            for player, _ in pairs(espDrawings) do clearPlayerESP(player) end
+        end
+    end
+})
+
+Iris:Slider({
+    Text = "FOV Radius",
+    Value = settings.fov,
+    Min = 20,
+    Max = 200,
+    OnChange = function(val)
+        settings.fov = val
+    end
+})
+
+-- Functions
+function worldToScreen(worldPoint)
+    local screenPos, onScreen = Camera:WorldToViewportPoint(worldPoint)
+    return Vector2.new(screenPos.X, screenPos.Y), onScreen
+end
+
+function getScreenSize()
+    return workspace.CurrentCamera.ViewportSize
+end
+
+function findTargetAtMouse()
+    local mousePos = Vector2.new(Mouse.X, Mouse.Y)
+    local myRoot = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+    if not myRoot then return nil end
+    
+    local closestPlayer = nil
+    local closestDistance = math.huge
+    
+    for _, p in ipairs(Players:GetPlayers()) do
+        if p ~= LocalPlayer and p.Character and not isSameTeam(p) then
+            local part = p.Character:FindFirstChild(settings.aimPart) or p.Character:FindFirstChild("HumanoidRootPart")
+            if part then
+                local screenPos, onScreen = worldToScreen(part.Position)
+                if onScreen then
+                    local distToMouse = (screenPos - mousePos).Magnitude
+                    if distToMouse <= settings.fov then
+                        local distToMe = (part.Position - myRoot.Position).Magnitude
+                        if distToMe < closestDistance then
+                            closestDistance = distToMe
+                            closestPlayer = p
+                        end
+                    end
+                end
+            end
+        end
+    end
+    return closestPlayer
+end
+
+function isSameTeam(player)
+    if not settings.teamCheck then return false end
+    local myTeam = LocalPlayer.Team
+    if not myTeam then return false end
+    return player.Team and player.Team == myTeam
+end
+
+function aimAt(target)
+    if not target or not target.Character then return end
+    local part = target.Character:FindFirstChild(settings.aimPart) or target.Character:FindFirstChild("HumanoidRootPart")
+    if not part then return end
+    
+    local targetPos = part.Position
+    local currentCFrame = Camera.CFrame
+    local targetCFrame = CFrame.new(currentCFrame.Position, targetPos)
+    
+    local tweenInfo = TweenInfo.new(settings.smoothing, Enum.EasingStyle.Linear, Enum.EasingDirection.Out)
+    TweenService:Create(Camera, tweenInfo, {CFrame = targetCFrame}):Play()
+    Mouse.Hit = CFrame.new(targetPos)
+end
+
+function createPlayerESP(player)
+    clearPlayerESP(player)
+    
+    local box = Drawing.new("Square")
+    box.Thickness = 2
+    box.Color = Color3.fromRGB(255, 50, 50)
+    box.Filled = false
+    box.Visible = false
+    
+    local hpLine = Drawing.new("Line")
+    hpLine.Thickness = 3
+    hpLine.Color = Color3.fromRGB(0, 255, 0)
+    hpLine.Visible = false
+    
+    local name = Drawing.new("Text")
+    name.Size = 13
+    name.Color = Color3.fromRGB(255, 255, 255)
+    name.Center = true
+    name.Outline = true
+    name.Visible = false
+    
+    local conn = RunService.RenderStepped:Connect(function()
+        if not settings.espEnabled or not player.Character then
+            box.Visible = false
+            hpLine.Visible = false
+            name.Visible = false
+            return
+        end
+        
+        local humanoid = player.Character:FindFirstChildOfClass("Humanoid")
+        local rootPart = player.Character:FindFirstChild("HumanoidRootPart")
+        local head = player.Character:FindFirstChild("Head")
+        
+        if not humanoid or not rootPart or not head then return end
+        
+        local headPos, headOnScreen = worldToScreen(head.Position)
+        local rootPos, rootOnScreen = worldToScreen(rootPart.Position)
+        
+        if not headOnScreen or not rootOnScreen then
+            box.Visible = false
+            hpLine.Visible = false
+            name.Visible = false
+            return
+        end
+        
+        local myRoot = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+        local distToPlayer = 0
+        if myRoot then
+            distToPlayer = math.floor((rootPart.Position - myRoot.Position).Magnitude)
+        end
+        
+        local baseHeight = math.abs(rootPos.Y - headPos.Y)
+        local scaleFactor = math.clamp(100 / (distToPlayer + 10), 0.3, 2.5)
+        local height = baseHeight * scaleFactor
+        local width = height * 0.7
+        
+        local centerX = (headPos.X + rootPos.X) / 2
+        local topY = headPos.Y - height * 0.05 * scaleFactor
+        local bottomY = rootPos.Y + height * 0.05 * scaleFactor
+        
+        box.Size = Vector2.new(width, height)
+        box.Position = Vector2.new(centerX - width/2, topY)
+        box.Visible = true
+        
+        local hpPercent = humanoid.Health / humanoid.MaxHealth
+        hpLine.From = Vector2.new(centerX - width/2 - 4, bottomY)
+        hpLine.To = Vector2.new(centerX - width/2 - 4, bottomY - height * hpPercent)
+        hpLine.Color = hpPercent > 0.5 and Color3.fromRGB(0, 255, 0) or hpPercent > 0.25 and Color3.fromRGB(255, 200, 0) or Color3.fromRGB(255, 0, 0)
+        hpLine.Visible = true
+        
+        name.Text = player.Name
+        name.Position = Vector2.new(centerX, topY - 14 * scaleFactor)
+        name.Size = math.clamp(13 * scaleFactor, 8, 20)
+        name.Visible = true
+    end)
+    
+    espDrawings[player] = {conn, box, hpLine, name}
+end
+
+function clearPlayerESP(player)
+    if espDrawings[player] then
+        for _, obj in ipairs(espDrawings[player]) do
+            if typeof(obj) == "RBXScriptConnection" then obj:Disconnect()
+            elseif obj.Visible ~= nil then obj.Visible = false end
+        end
+        espDrawings[player] = nil
+    end
+end
+
+-- Main loop
+RunService.RenderStepped:Connect(function()
+    if settings.enabled then
+        local newTarget = findTargetAtMouse()
+        if newTarget and newTarget ~= currentTarget then
+            currentTarget = newTarget
+        end
+        if currentTarget then aimAt(currentTarget) end
+    end
+end)
+
+RunService.Heartbeat:Connect(function()
+    if settings.enabled and currentTarget and currentTarget.Character then
+        local humanoid = currentTarget.Character:FindFirstChildOfClass("Humanoid")
+        if humanoid and humanoid.Health <= 0 then
+            currentTarget = findTargetAtMouse()
+        end
+    end
+end)
+
+-- Keyboard controls
+UserInputService.InputBegan:Connect(function(input)
+    if input.KeyCode == Enum.KeyCode.E and settings.enabled then
+        settings.aimPart = settings.aimPart == "Head" and "HumanoidRootPart" or "Head"
+    end
+end)
