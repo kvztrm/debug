@@ -51,11 +51,10 @@ local function GetRandomSkyPosition()
     return Vector3.new(x, y, z)
 end
 
--- Autokill control variables
+-- Autokill control
 local autokillConnection = nil
 local lastEnabledState = false
 
--- Poll state every frame (this bundle has no .changed event)
 RunService.Heartbeat:Connect(function()
     local currentEnabled = autoKillEnabled:get()
     
@@ -63,9 +62,10 @@ RunService.Heartbeat:Connect(function()
         lastEnabledState = currentEnabled
         
         if currentEnabled then
-            -- Start autokill
+            -- Stop any old connection first
             if autokillConnection then
                 autokillConnection:Disconnect()
+                autokillConnection = nil
             end
             
             autokillConnection = RunService.Heartbeat:Connect(function()
@@ -168,7 +168,7 @@ RunService.Heartbeat:Connect(function()
                 end
             end)
         else
-            -- Stop autokill
+            -- Safely stop
             if autokillConnection then
                 autokillConnection:Disconnect()
                 autokillConnection = nil
