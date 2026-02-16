@@ -2,10 +2,6 @@ local Iris = loadstring(game:HttpGet("https://raw.githubusercontent.com/x0581/Ir
 
 local autoKillEnabled = Iris.State(false)
 
--- ──────────────────────────────────────────────────────────────
--- Autokill logic (from https://raw.githubusercontent.com/kvztrm/debug/refs/heads/main/lip)
--- ──────────────────────────────────────────────────────────────
-
 local GetService = setmetatable({}, {
 	__index = function(Self, Name)
 		Self[Name] = game:GetService(Name)
@@ -40,9 +36,6 @@ local function FindRemoteEvent()
 end
 
 FindRemoteEvent()
-if not RemoteEvent then
-    warn("Warning: RemoteEvent not found! Script will still teleport but can't pickup/attack.")
-end
 
 local Pickups = Workspace:WaitForChild("pickups")
 local TheTarget = nil
@@ -58,7 +51,6 @@ local function GetRandomSkyPosition()
     return Vector3.new(x, y, z)
 end
 
--- The main autokill loop — only runs when toggle is ON
 local connection
 autoKillEnabled.changed:Connect(function(enabled)
     if enabled then
@@ -163,24 +155,22 @@ autoKillEnabled.changed:Connect(function(enabled)
                 task.wait(math.random(3, 6) / 10)
             end
         end)
-        
-        warn("AUTOKILL ENABLED → SKY GOD MODE ACTIVE")
     else
         if connection then
             connection:Disconnect()
             connection = nil
         end
         TheTarget = nil
-        warn("AUTOKILL DISABLED")
     end
 end)
 
--- GUI
 Iris:Connect(function()
     Iris.Window({"LIFE IN PRISON"})
     
     Iris.Tree({"MAIN"})
         Iris.Checkbox({"AUTOKILL TOGGLE"}, {isChecked = autoKillEnabled})
         Iris.Text({"AUTOKILL: " .. (autoKillEnabled:get() and "ENABLED" or "DISABLED")})
+    Iris.End()
+    
     Iris.End()
 end)
