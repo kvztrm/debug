@@ -26,7 +26,7 @@ local function FindRemoteEvent()
         ReplicatedStorage:FindFirstChild("Network") and ReplicatedStorage.Network:FindFirstChild("RemoteEvent")
     }
     
-    for _, remote in paths do
+    for _, remote in pairs(paths) do
         if remote and remote:IsA("RemoteEvent") then
             RemoteEvent = remote
             return true
@@ -51,116 +51,130 @@ local function GetRandomSkyPosition()
     return Vector3.new(x, y, z)
 end
 
-local connection
-autoKillEnabled.changed:Connect(function(enabled)
-    if enabled then
-        if connection then connection:Disconnect() end
+-- Autokill control variables
+local autokillConnection = nil
+local lastEnabledState = false
+
+-- Poll state every frame (this bundle has no .changed event)
+RunService.Heartbeat:Connect(function()
+    local currentEnabled = autoKillEnabled:get()
+    
+    if currentEnabled ~= lastEnabledState then
+        lastEnabledState = currentEnabled
         
-        connection = RunService.Heartbeat:Connect(function()
-            local MyChar = LocalPlayer.Character
-            if not MyChar then return end
-            
-            local Humanoid = MyChar:FindFirstChildOfClass("Humanoid")
-            local Root = MyChar:FindFirstChild("HumanoidRootPart")
-            if not Humanoid or not Root then return end
-            
-            if Humanoid.Sit then Humanoid.Sit = false end
-            if Root.Anchored then Root.Anchored = false end
-            
-            local Backpack = LocalPlayer:FindFirstChild("Backpack")
-            local HasKnife = (MyChar:FindFirstChild("Knife")) or (Backpack and Backpack:FindFirstChild("Knife"))
-            
-            if not HasKnife then
-                for _, Pickup in Pickups:GetChildren() do
-                    if Pickup.Name == "Knife" then
-                        local MeshPart = Pickup:FindFirstChild("Meshes/knife1")
-                        if MeshPart and MeshPart:IsA("BasePart") and MeshPart.Parent then
-                            Root.CFrame = CFrame.new(MeshPart.Position)
-                            task.wait(0.2)
-                            
-                            if RemoteEvent then
-                                RemoteEvent:FireServer(12, Pickup)
-                            end
-                            task.wait(0.2)
-                            break
-                        end
-                    end
-                end
-                return
+        if currentEnabled then
+            -- Start autokill
+            if autokillConnection then
+                autokillConnection:Disconnect()
             end
             
-            local Knife = MyChar:FindFirstChild("Knife") or (Backpack and Backpack:FindFirstChild("Knife"))
-            if not Knife then return end
-            
-            if TheTarget and TheTarget.Parent then
-                local TargetChar = TheTarget.Character
-                if TargetChar then
-                    local TargetRoot = TargetChar:FindFirstChild("HumanoidRootPart")
-                    local TargetHead = TargetChar:FindFirstChild("Head")
-                    local TargetHumanoid = TargetChar:FindFirstChildOfClass("Humanoid")
-                    local ForceField = TargetChar:FindFirstChildOfClass("ForceField")
-                    
-                    if TargetRoot and TargetHead and TargetHumanoid and TargetHumanoid.Health > 0 and not ForceField then
-                        local MyTeam = LocalPlayer.Team
-                        local TargetTeam = TheTarget.Team
-                        local IsPolice = MyTeam and MyTeam.Name == "Police"
-                        local TargetIsPolice = TargetTeam and TargetTeam.Name == "Police"
-                        
-                        Root.CFrame = TargetRoot.CFrame * CFrame.new(0, -6, 0)
-                        
-                        if IsPolice and TargetIsPolice then
-                            if Knife.Parent == MyChar then
-                                pcall(function() Humanoid:UnequipTools() end)
-                            end
-                            if (Root.Position - TargetRoot.Position).Magnitude <= 17 then
+            autokillConnection = RunService.Heartbeat:Connect(function()
+                local MyChar = LocalPlayer.Character
+                if not MyChar then return end
+                
+                local Humanoid = MyChar:FindFirstChildOfClass("Humanoid")
+                local Root = MyChar:FindFirstChild("HumanoidRootPart")
+                if not Humanoid or not Root then return end
+                
+                if Humanoid.Sit then Humanoid.Sit = false end
+                if Root.Anchored then Root.Anchored = false end
+                
+                local Backpack = LocalPlayer:FindFirstChild("Backpack")
+                local HasKnife = (MyChar:FindFirstChild("Knife")) or (Backpack and Backpack:FindFirstChild("Knife"))
+                
+                if not HasKnife then
+                    for _, Pickup in pairs(Pickups:GetChildren()) do
+                        if Pickup.Name == "Knife" then
+                            local MeshPart = Pickup:FindFirstChild("Meshes/knife1")
+                            if MeshPart and MeshPart:IsA("BasePart") and MeshPart.Parent then
+                                Root.CFrame = CFrame.new(MeshPart.Position)
+                                task.wait(0.2)
+                                
                                 if RemoteEvent then
-                                    RemoteEvent:FireServer(33, TargetHead)
+                                    RemoteEvent:FireServer(12, Pickup)
                                 end
-                            end
-                        else
-                            if Knife.Parent == Backpack then
-                                pcall(function() Humanoid:EquipTool(Knife) end)
-                            end
-                            if (Root.Position - TargetRoot.Position).Magnitude <= 37 then
-                                local Direction = (TargetHead.Position - Root.Position).Unit
-                                if RemoteEvent then
-                                    RemoteEvent:FireServer(16, Knife, TargetHead, Direction)
-                                end
+                                task.wait(0.2)
+                                break
                             end
                         end
-                        return
                     end
+                    return
                 end
-            end
-            
-            TheTarget = nil
-            
-            for _, Player in Players:GetPlayers() do
-                if Player ~= LocalPlayer then
-                    local TargetChar = Player.Character
+                
+                local Knife = MyChar:FindFirstChild("Knife") or (Backpack and Backpack:FindFirstChild("Knife"))
+                if not Knife then return end
+                
+                if TheTarget and TheTarget.Parent then
+                    local TargetChar = TheTarget.Character
                     if TargetChar then
+                        local TargetRoot = TargetChar:FindFirstChild("HumanoidRootPart")
+                        local TargetHead = TargetChar:FindFirstChild("Head")
                         local TargetHumanoid = TargetChar:FindFirstChildOfClass("Humanoid")
                         local ForceField = TargetChar:FindFirstChildOfClass("ForceField")
-                        if TargetHumanoid and TargetHumanoid.Health > 0 and not ForceField then
-                            TheTarget = Player
-                            break
+                        
+                        if TargetRoot and TargetHead and TargetHumanoid and TargetHumanoid.Health > 0 and not ForceField then
+                            local MyTeam = LocalPlayer.Team
+                            local TargetTeam = TheTarget.Team
+                            local IsPolice = MyTeam and MyTeam.Name == "Police"
+                            local TargetIsPolice = TargetTeam and TargetTeam.Name == "Police"
+                            
+                            Root.CFrame = TargetRoot.CFrame * CFrame.new(0, -6, 0)
+                            
+                            if IsPolice and TargetIsPolice then
+                                if Knife.Parent == MyChar then
+                                    pcall(function() Humanoid:UnequipTools() end)
+                                end
+                                if (Root.Position - TargetRoot.Position).Magnitude <= 17 then
+                                    if RemoteEvent then
+                                        RemoteEvent:FireServer(33, TargetHead)
+                                    end
+                                end
+                            else
+                                if Knife.Parent == Backpack then
+                                    pcall(function() Humanoid:EquipTool(Knife) end)
+                                end
+                                if (Root.Position - TargetRoot.Position).Magnitude <= 37 then
+                                    local Direction = (TargetHead.Position - Root.Position).Unit
+                                    if RemoteEvent then
+                                        RemoteEvent:FireServer(16, Knife, TargetHead, Direction)
+                                    end
+                                end
+                            end
+                            return
                         end
                     end
                 end
+                
+                TheTarget = nil
+                
+                for _, Player in pairs(Players:GetPlayers()) do
+                    if Player ~= LocalPlayer then
+                        local TargetChar = Player.Character
+                        if TargetChar then
+                            local TargetHumanoid = TargetChar:FindFirstChildOfClass("Humanoid")
+                            local ForceField = TargetChar:FindFirstChildOfClass("ForceField")
+                            if TargetHumanoid and TargetHumanoid.Health > 0 and not ForceField then
+                                TheTarget = Player
+                                break
+                            end
+                        end
+                    end
+                end
+                
+                if not TheTarget then
+                    local skyPos = GetRandomSkyPosition()
+                    Root.CFrame = CFrame.new(skyPos)
+                    task.wait(math.random(3, 6) / 10)
+                end
+            end)
+        else
+            -- Stop autokill
+            if autokillConnection then
+                autokillConnection:Disconnect()
+                autokillConnection = nil
             end
-            
-            if not TheTarget then
-                local skyPos = GetRandomSkyPosition()
-                Root.CFrame = CFrame.new(skyPos)
-                task.wait(math.random(3, 6) / 10)
-            end
-        end)
-    else
-        if connection then
-            connection:Disconnect()
-            connection = nil
+            TheTarget = nil
         end
-        TheTarget = nil
     end
 end)
 
