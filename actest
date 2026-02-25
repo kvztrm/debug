@@ -1,0 +1,157 @@
+-- AntiCheat Scanner / Detector  (February 2026 edition)
+-- Put in LocalScript (StarterPlayerScripts) or Script (workspace)
+
+local PlacesToCheck = {
+    workspace,
+    game:GetService("ReplicatedStorage"),
+    game:GetService("ServerStorage"),
+    game:GetService("ServerScriptService"),
+    game:GetService("StarterGui"),
+    game:GetService("StarterPack"),
+}
+
+local SuspiciousPhrases = {
+    -- Movement / physics checks
+    "Humanoid.WalkSpeed", "WalkSpeed", "JumpPower", "HipHeight",
+    "PlatformStand", "Sit", "FallenPartsDestroyHeight",
+    "BodyVelocity", "BodyGyro", "BodyPosition", "BodyForce",
+    "VectorVelocity", "Velocity", "AssemblyLinearVelocity",
+    "MaxSlopeAngle", "HumanoidRootPart.Velocity",
+    "GetVelocity", "GetMass", "GetMassInKilograms",
+
+    -- Teleport / position checks
+    "CFrame", ".CFrame =", "Position", ".Position =",
+    "Teleport", "teleport", "TeleportService", "TeleportPartyAsync",
+    "SetPrimaryPartCFrame", "PivotTo", "MoveTo",
+
+    -- Fly / noclip related
+    "fly", "Fly", "noclip", "Noclip", "NoClip", "InfiniteJump",
+    "Infinite Yield", "flying", "flight", "levitate", "Levitate",
+    "PlatformFlying", "flyspeed", "flySpeed",
+
+    -- Exploit signatures & common anti-cheat phrases
+    "exploit", "Exploits", "cheat", "Cheat", "hack", "Hack",
+    "synapse", "krnl", "scriptware", "fluxus", "delta", "electron",
+    "getrawmetatable", "hookfunction", "hookmetamethod", "newcclosure",
+    "getconnections", "getgc", "getrenv", "decompile", "Drawing.new",
+    "isexecutorclosure", "identifyexecutor", "request", "http_request",
+    "firesignal", "firetouchinterest",
+
+    -- Common anti-cheat variable/function names
+    "AntiCheat", "AntiExploit", "AC", "Anti", "Detection", "Detect",
+    "Check", "Validate", "Verification", "Sanity", "Integrity",
+    "NoCheat", "AntiFly", "AntiTeleport", "AntiNoclip", "AntiGodmode",
+    "AntiSpeed", "AntiJump", "AntiBypass", "AntiTamper",
+
+    -- Physics / simulation tampering
+    "PhysicalProperties", "CustomPhysicalProperties", "NetworkOwnership",
+    "SetNetworkOwner", "SetNetworkOwnershipAuto",
+    "SimulationRadius", "StreamingEnabled",
+
+    -- Common remote names used in bad anti-cheats
+    "AntiCheatRemote", "Validation", "CheckRemote", "Verify",
+    "Heartbeat", "Stepped", "RenderStepped", "RunService.Heartbeat",
+}
+
+local DeepKeywords = {
+    "hookfunction", "hookmetamethod", "getrawmetatable", "setreadonly",
+    "makewriteable", "getupvalue", "setupvalue", "getconstants",
+    "getprotos", "getproto", "replaceclosure",
+}
+
+local found = {}
+
+local function isSuspiciousCode(str)
+    if typeof(str) ~= "string" then return false end
+    str = str:lower()
+
+    for _, word in ipairs(SuspiciousPhrases) do
+        if str:find(word:lower(), 1, true) then
+            return true, word
+        end
+    end
+
+    return false
+end
+
+local function scanScript(scriptObj)
+    if not scriptObj:IsA("LuaSourceContainer") then return end
+
+    local code = scriptObj.Source or ""
+    if code == "" then return end
+
+    local lower = code:lower()
+
+    local reasons = {}
+
+    -- Check normal keywords
+    for _, kw in ipairs(SuspiciousPhrases) do
+        if lower:find(kw:lower(), 1, true) then
+            table.insert(reasons, kw)
+        end
+    end
+
+    -- Check more advanced / dangerous patterns
+    for _, kw in ipairs(DeepKeywords) do
+        if lower:find(kw, 1, true) then
+            table.insert(reasons, "⚠️ " .. kw .. " (advanced hooking)")
+        end
+    end
+
+    -- Very basic anti-decompiler / protection check
+    if lower:find("loadstring") and lower:find("game:HttpGet") then
+        table.insert(reasons, "loadstring + HttpGet (common remote load)")
+    end
+
+    if #reasons > 0 then
+        table.insert(found, {
+            Object  = scriptObj:GetFullName(),
+            Class   = scriptObj.ClassName,
+            Reasons = reasons,
+            LineCount = select(2, code:gsub("\n", "\n")) + 1
+        })
+    end
+end
+
+local function deepScan(parent)
+    for _, obj in ipairs(parent:GetDescendants()) do
+        pcall(scanScript, obj)
+    end
+end
+
+-- Main scan
+print("🔍 Starting anti-cheat / movement-check scan...")
+
+for _, place in ipairs(PlacesToCheck) do
+    if place then
+        print("Scanning → " .. place:GetFullName())
+        deepScan(place)
+    end
+end
+
+-- Results
+if #found == 0 then
+    print("\nNo suspicious anti-cheat-like code found in scanned locations.")
+else
+    print("\n┌────────────────────────────────────────────────────┐")
+    print("│         Possible Anti-Cheat / Exploit Detection     ")
+    print("└────────────────────────────────────────────────────┘")
+
+    for i, entry in ipairs(found) do
+        print(string.format("%2d. %s  (%s)", i, entry.Object, entry.Class))
+        print("   Lines: ~" .. entry.LineCount)
+        print("   Indicators:")
+        for _, r in ipairs(entry.Reasons) do
+            print("     • " .. r)
+        end
+        print()
+    end
+
+    print("Total suspicious scripts found: " .. #found)
+end
+
+print("\nNote: This is NOT 100% reliable. Many modern anti-cheats are:")
+print("• heavily obfuscated")
+print("• split across modules")
+print("• using remote validation")
+print("• using metatable hooks / namecall hooks")
