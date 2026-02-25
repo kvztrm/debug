@@ -1,92 +1,7 @@
--- Executor script: Create huge part + mass delete named plot objects
+-- Executor-friendly: Mass delete plot-related Models, Folders, Parts + create huge base part
+-- Improved version - targets Models/Folders/Parts/Unions/MeshParts more reliably
 
 local Workspace = game:GetService("Workspace")
-
--- ────────────────────────────────────────────────
--- DELETE EVERYTHING WITH THESE NAMES (anywhere in game)
--- ────────────────────────────────────────────────
-
-local namesToWipe = {
-    "PlotBase",
-    "PlotBaseTop",
-    "_DefenseZone",
-    "Plot",
-    "Bottom",
-    "Shield",
-    "BaseGrass",
-    "TP_BARRIERS"
-}
-
-local deletedCount = 0
-
-for _, obj in ipairs(Workspace:GetDescendants()) do
-    if table.find(namesToWipe, obj.Name) then
-        pcall(function()
-            obj:Destroy()
-            deletedCount = deletedCount + 1
-        end)
-    end
-end
-
--- Also check top-level workspace children (in case GetDescendants misses something weird)
-for _, obj in ipairs(Workspace:GetChildren()) do
-    if table.find(namesToWipe, obj.Name) then
-        pcall(function()
-            obj:Destroy()
-            deletedCount = deletedCount + 1
-        end)
-    end
-end
-
-if deletedCount > 0 then
-    print("Deleted " .. deletedCount .. " objects with matching names")
-else
-    print("No objects found with those exact names")
-end
-
--- ────────────────────────────────────────────────
--- CREATE THE HUGE PART
--- ────────────────────────────────────────────────
-
-local part = Instance.new("Part")
-part.Name = "MassiveBase"  -- you can rename if you want
-
-part.Size = Vector3.new(1068, 0.1249999925494194, 1032)
-
-part.CFrame = CFrame.new(
-    -260, -30.3115025, -0.39616394,
-    1,  0,  0,
-    0,  1,  0,
-    0,  0,  1
-)
-
--- Typical executor-spawned part settings
-part.Anchored      = true
-part.CanCollide    = true
-part.Transparency  = 0
-part.Material      = Enum.Material.Concrete  -- or Enum.Material.Grass, Slate, etc.
-part.Color         = Color3.fromRGB(55, 65, 50)  -- dark ground-ish
-part.CastShadow    = true
-
--- Makes it extremely hard to destroy/lag
-part.CustomPhysicalProperties = PhysicalProperties.new(999999, 0.1, 0.3, 999, 1)
-
-part.Parent = Workspace
-
--- Confirmation prints (visible in executor console)
-print("Huge part created:")
-print("   Name → " .. part.Name)
-print("   Size → " .. tostring(part.Size))
-print("  CFrame → " .. tostring(part.CFrame))
-print("  Parent → " .. part.Parent.Name)
-
-print("Script finished.")-- ServerScriptService / CreateBigPlotBaseAndCleanOldStuff.lua
-
-local Workspace = game:GetService("Workspace")
-
--- ────────────────────────────────────────────────
---  1. Remove old / conflicting plot-related objects
--- ────────────────────────────────────────────────
 
 local namesToDelete = {
     "PlotBase",
@@ -99,65 +14,76 @@ local namesToDelete = {
     "TP_BARRIERS"
 }
 
-local function cleanOldObjects()
-    local count = 0
-    for _, obj in ipairs(Workspace:GetDescendants()) do
-        if table.find(namesToDelete, obj.Name) then
-            pcall(function()
-                obj:Destroy()
-                count += 1
-            end)
+-- ────────────────────────────────────────────────
+-- CLEANUP - destroy anything matching these names (Models, Folders, Parts, etc.)
+-- ────────────────────────────────────────────────
+
+local deleted = 0
+
+local function safeDestroy(obj)
+    if obj and not obj:IsDescendantOf(game:GetService("Players")) then
+        pcall(function()
+            obj:Destroy()
+            deleted = deleted + 1
+        end)
+    end
+end
+
+-- Scan ALL descendants in Workspace
+for _, obj in ipairs(Workspace:GetDescendants()) do
+    if table.find(namesToDelete, obj.Name) then
+        if obj:IsA("Model") or obj:IsA("Folder") or obj:IsA("Part") or 
+           obj:IsA("MeshPart") or obj:IsA("UnionOperation") or obj:IsA("WedgePart") then
+            safeDestroy(obj)
         end
     end
-    if count > 0 then
-        warn("Deleted " .. count .. " old plot-related objects")
+end
+
+-- Also check direct Workspace children (sometimes GetDescendants misses edge cases)
+for _, obj in ipairs(Workspace:GetChildren()) do
+    if table.find(namesToDelete, obj.Name) then
+        safeDestroy(obj)
     end
 end
 
--- ────────────────────────────────────────────────
---  2. Create the new massive part
--- ────────────────────────────────────────────────
-
-local function createNewBasePart()
-    local part = Instance.new("Part")
-    part.Name = "HugeCustomBase"   -- you can change name if you want
-
-    -- Size exactly as requested
-    part.Size = Vector3.new(1068, 0.1249999925494194, 1032)
-
-    -- CFrame exactly as given (position + identity rotation)
-    part.CFrame = CFrame.new(
-        -260, -30.3115025, -0.39616394,
-        1, 0, 0,
-        0, 1, 0,
-        0, 0, 1
-    )
-
-    -- Common settings for large floor/base parts
-    part.Anchored = true
-    part.CanCollide = true
-    part.Material = Enum.Material.Concrete   -- or Grass, Slate, etc.
-    part.Color = Color3.fromRGB(60, 70, 55)  -- dark-ish ground color
-    part.Transparency = 0
-    part.CastShadow = true
-
-    -- Optional: make it indestructible / very high health
-    part.CustomPhysicalProperties = PhysicalProperties.new(10000, 0.3, 0.5, 100, 1)
-
-    part.Parent = Workspace
-
-    print("Created huge base part → " .. part:GetFullName())
-    print("Size  = " .. tostring(part.Size))
-    print("CFrame = " .. tostring(part.CFrame))
+if deleted > 0 then
+    print("Cleaned " .. deleted .. " matching objects (Models / Folders / Parts / etc.)")
+else
+    print("Found no objects named: " .. table.concat(namesToDelete, ", "))
 end
 
 -- ────────────────────────────────────────────────
---  Execute
+-- CREATE YOUR CUSTOM HUGE PART
 -- ────────────────────────────────────────────────
 
-print("Running huge base creator + cleanup...")
+local part = Instance.new("Part")
+part.Name = "HugeBaseFloor"   -- feel free to change
 
-cleanOldObjects()
-createNewBasePart()
+part.Size = Vector3.new(1068, 0.1249999925494194, 1032)
+
+part.CFrame = CFrame.new(
+    -260, -30.3115025, -0.39616394,
+    1, 0, 0,
+    0, 1, 0,
+    0, 0, 1
+)
+
+part.Anchored             = true
+part.CanCollide           = true
+part.Transparency         = 0
+part.Material             = Enum.Material.Concrete     -- change to Grass / Slate / etc if preferred
+part.Color                = Color3.fromRGB(65, 75, 60) -- dark ground color
+part.CastShadow           = true
+
+-- Very high durability (helps against some lag/exploit tools)
+part.CustomPhysicalProperties = PhysicalProperties.new(9999999, 0.1, 0.5, 1000, 1)
+
+part.Parent = Workspace
+
+print("Created huge part:")
+print("  • Name:   " .. part.Name)
+print("  • Size:   " .. tostring(part.Size))
+print("  • CFrame: " .. tostring(part.CFrame))
+print("  • Visible only to you (client-sided) unless game has weak replication")
 
 print("Done.")
