@@ -1,4 +1,86 @@
--- ServerScriptService / CreateBigPlotBaseAndCleanOldStuff.lua
+-- Executor script: Create huge part + mass delete named plot objects
+
+local Workspace = game:GetService("Workspace")
+
+-- ────────────────────────────────────────────────
+-- DELETE EVERYTHING WITH THESE NAMES (anywhere in game)
+-- ────────────────────────────────────────────────
+
+local namesToWipe = {
+    "PlotBase",
+    "PlotBaseTop",
+    "_DefenseZone",
+    "Plot",
+    "Bottom",
+    "Shield",
+    "BaseGrass",
+    "TP_BARRIERS"
+}
+
+local deletedCount = 0
+
+for _, obj in ipairs(Workspace:GetDescendants()) do
+    if table.find(namesToWipe, obj.Name) then
+        pcall(function()
+            obj:Destroy()
+            deletedCount = deletedCount + 1
+        end)
+    end
+end
+
+-- Also check top-level workspace children (in case GetDescendants misses something weird)
+for _, obj in ipairs(Workspace:GetChildren()) do
+    if table.find(namesToWipe, obj.Name) then
+        pcall(function()
+            obj:Destroy()
+            deletedCount = deletedCount + 1
+        end)
+    end
+end
+
+if deletedCount > 0 then
+    print("Deleted " .. deletedCount .. " objects with matching names")
+else
+    print("No objects found with those exact names")
+end
+
+-- ────────────────────────────────────────────────
+-- CREATE THE HUGE PART
+-- ────────────────────────────────────────────────
+
+local part = Instance.new("Part")
+part.Name = "MassiveBase"  -- you can rename if you want
+
+part.Size = Vector3.new(1068, 0.1249999925494194, 1032)
+
+part.CFrame = CFrame.new(
+    -260, -30.3115025, -0.39616394,
+    1,  0,  0,
+    0,  1,  0,
+    0,  0,  1
+)
+
+-- Typical executor-spawned part settings
+part.Anchored      = true
+part.CanCollide    = true
+part.Transparency  = 0
+part.Material      = Enum.Material.Concrete  -- or Enum.Material.Grass, Slate, etc.
+part.Color         = Color3.fromRGB(55, 65, 50)  -- dark ground-ish
+part.CastShadow    = true
+
+-- Makes it extremely hard to destroy/lag
+part.CustomPhysicalProperties = PhysicalProperties.new(999999, 0.1, 0.3, 999, 1)
+
+part.Parent = Workspace
+
+-- Confirmation prints (visible in executor console)
+print("Huge part created:")
+print("   Name → " .. part.Name)
+print("   Size → " .. tostring(part.Size))
+print("  CFrame → " .. tostring(part.CFrame))
+print("  Parent → " .. part.Parent.Name)
+
+print("Script finished.")-- ServerScriptService / CreateBigPlotBaseAndCleanOldStuff.lua
 
 local Workspace = game:GetService("Workspace")
 
