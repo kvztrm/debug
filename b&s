@@ -86,4 +86,11 @@ print("  • Size:   " .. tostring(part.Size))
 print("  • CFrame: " .. tostring(part.CFrame))
 print("  • Visible only to you (client-sided) unless game has weak replication")
 
+local args = {
+	"buytool",
+	306690896,
+	"Bloxy Cola"
+}
+game:GetService("ReplicatedStorage"):WaitForChild("RemoteEvent"):FireServer(unpack(args))
+
 print("Done.")
