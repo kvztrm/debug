@@ -1,88 +1,82 @@
--- Executor script: TP to CENTER of HIGHEST PRIORITY brainrot/plot (Strawberry Elephant = #1)
+-- Executor script: WHITE ESP HIGHLIGHT on ALL MODELS (see-through walls)
+-- Paste & execute - highlights EVERY model in workspace
 
 local Workspace = game:GetService("Workspace")
+local RunService = game:GetService("RunService")
 local Players = game:GetService("Players")
 local LocalPlayer = Players.LocalPlayer
 
-local character = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
-local hrp = character:WaitForChild("HumanoidRootPart")  -- HumanoidRootPart
+local highlightedModels = {}
+local highlights = {}
 
-local PlotsFolder = Workspace:FindFirstChild("Plots")
-if not PlotsFolder then
-    print("❌ No 'Plots' folder found in Workspace!")
-    return
+-- Create white highlight on model
+local function addHighlight(model)
+    if highlightedModels[model] then return end  -- already highlighted
+    
+    highlightedModels[model] = true
+    
+    -- Main highlight (white outline + fill)
+    local highlight = Instance.new("Highlight")
+    highlight.FillColor = Color3.new(1, 1, 1)      -- pure white fill
+    highlight.OutlineColor = Color3.new(1, 1, 1)   -- pure white outline
+    highlight.FillTransparency = 0.4               -- semi-transparent fill
+    highlight.OutlineTransparency = 0              -- solid outline
+    highlight.Parent = model
+    
+    table.insert(highlights, highlight)
+    
+    -- Optional: floating name tag (shows model name)
+    local billboard = Instance.new("BillboardGui")
+    billboard.Size = UDim2.new(0, 200, 0, 50)
+    billboard.StudsOffset = Vector3.new(0, 3, 0)
+    billboard.AlwaysOnTop = true
+    billboard.LightInfluence = 0
+    billboard.Parent = model.PrimaryPart or model:FindFirstChildWhichIsA("BasePart") or model
+    
+    local label = Instance.new("TextLabel")
+    label.Size = UDim2.new(1, 0, 1, 0)
+    label.BackgroundTransparency = 1
+    label.Text = model.Name
+    label.TextColor3 = Color3.new(1, 1, 1)
+    label.TextStrokeTransparency = 0
+    label.TextStrokeColor3 = Color3.new(0, 0, 0)
+    label.TextScaled = true
+    label.Font = Enum.Font.SourceSansBold
+    label.Parent = billboard
+    
+    print("✅ Highlighted: " .. model:GetFullName())
 end
 
--- PRIORITY (1 = highest → teleports here first if found)
-local targets = {
-    {name = "Strawberry Elephant", prio = 1},
-    {name = "Torrtuginni Dragonfruitinni", prio = 2},
-    {name = "Chillin Chilli", prio = 3},
-    {name = "Alessio", prio = 4},
-    {name = "Bulbito Bandito Traktorito", prio = 5},
-    {name = "Rhino Toasterino", prio = 6},
-    {name = "Octamasu Noddledudu", prio = 7},
-    {name = "KarKirKirKurKur", prio = 8},
-    {name = "La grande Combinasion", prio = 9}
-}
-
--- Approximate CENTER positions of plots 1-6 (middle of the plot base)
--- These are common-ish coords from Steal a Brainrot videos/guides — adjust if off!
-local plotCenters = {
-    ["1"] = Vector3.new(-170, 7, 194),   -- Plot 1 center
-    ["2"] = Vector3.new(-282, 7, 126),   -- Plot 2 center
-    ["3"] = Vector3.new(-281, 7, -54),   -- Plot 3 center
-    ["4"] = Vector3.new(-182, 7, -133),  -- Plot 4 center
-    ["5"] = Vector3.new(-70, 7, -66),    -- Plot 5 center
-    ["6"] = Vector3.new(-71, 7, 114)     -- Plot 6 center
-}
-
-print("🔍 Scanning plots 1-6 for brainrots (highest prio first)...")
-
-local best = nil
-local bestPrio = math.huge
-
-for num = 1, 6 do
-    local plotName = tostring(num)
-    local plot = PlotsFolder:FindFirstChild(plotName)
-    if not plot then continue end
-    
-    -- Path to sign text (Sign → SignBlock → BaseSign → Text1)
-    local txtObj = plot.Sign
-    if txtObj then txtObj = txtObj.SignBlock end
-    if txtObj then txtObj = txtObj.BaseSign end
-    if txtObj then txtObj = txtObj.Text1 end
-    
-    local text = ""
-    if txtObj and txtObj:IsA("TextLabel") then
-        text = txtObj.Text or ""
-    end
-    
-    -- Check each target
-    for _, t in ipairs(targets) do
-        if text:lower():find(t.name:lower()) then
-            if t.prio < bestPrio then
-                bestPrio = t.prio
-                best = {
-                    plot = num,
-                    name = t.name,
-                    pos   = plotCenters[plotName]
-                }
-                print("Found #" .. t.prio .. ": " .. t.name .. " → Plot " .. num)
-            end
-            break  -- one match per plot
+-- Scan ALL models in workspace
+local function scanModels()
+    for _, obj in ipairs(Workspace:GetDescendants()) do
+        if obj:IsA("Model") and obj ~= Workspace then
+            addHighlight(obj)
         end
     end
 end
 
-if best then
-    print("\n🚀 TP to CENTER of " .. best.name .. " (Plot " .. best.plot .. ")")
-    print("   Exact pos: " .. tostring(best.pos))
-    
-    -- Teleport DEAD CENTER (no extra height)
-    hrp.CFrame = CFrame.new(best.pos)
-    
-    print("✅ Teleported to brainrot center!")
-else
-    print("\n❌ No matching brainrots found in plots 1-6")
-end
+-- Initial scan
+print("🔍 Scanning all models for white ESP...")
+scanModels()
+
+-- Continuous scan (catches new models/respawns)
+local connection
+connection = RunService.Heartbeat:Connect(function()
+    for _, obj in ipairs(Workspace:GetDescendants()) do
+        if obj:IsA("Model") and not highlightedModels[obj] then
+            addHighlight(obj)
+        end
+    end
+end)
+
+-- Clean up on script end
+game:GetService("Players").LocalPlayer.CharacterRemoving:Connect(function()
+    connection:Disconnect()
+    for _, h in ipairs(highlights) do
+        if h then pcall(function() h:Destroy() end) end
+    end
+end)
+
+print("✨ WHITE ESP ACTIVE - All models highlighted (see-through walls)")
+print("Total models found: " .. #highlights)
