@@ -1,0 +1,92 @@
+-- Executor script: Find "thediamondtapperking" signs → place steal marker
+
+local Workspace = game:GetService("Workspace")
+local PlotsFolder = Workspace:FindFirstChild("Plots")
+
+if not PlotsFolder then
+    print("Plots folder not found in Workspace!")
+    return
+end
+
+-- Steal positions per plot (X, Y, Z)
+local stealPositions = {
+    ["1"] = Vector3.new(-170, 7, 194),
+    ["2"] = Vector3.new(-282, 7, 126),
+    ["3"] = Vector3.new(-281, 7, -54),
+    ["4"] = Vector3.new(-182, 7, -133),
+    ["5"] = Vector3.new(-70, 7, -66),
+    ["6"] = Vector3.new(-71, 7, 114)
+}
+
+print("Scanning plots 1–6 for 'thediamondtapperking'...\n")
+
+local foundCount = 0
+
+for plotNum = 1, 6 do
+    local plotName = tostring(plotNum)
+    local plot = PlotsFolder:FindFirstChild(plotName)
+    
+    if not plot then
+        print("Plot " .. plotNum .. " → missing")
+        continue
+    end
+    
+    -- Path to the text
+    local signPart     = plot:FindFirstChild("Sign")
+    local signBlock    = signPart and signPart:FindFirstChild("SignBlock")
+    local baseSign     = signBlock and signBlock:FindFirstChild("BaseSign")
+    local textLabel    = baseSign and baseSign:FindFirstChild("Text1")
+    
+    local signText = ""
+    if textLabel and textLabel:IsA("TextLabel") then
+        signText = textLabel.Text or ""
+    end
+    
+    -- Case-insensitive check
+    if signText:lower():find("thediamondtapperking") then
+        foundCount = foundCount + 1
+        
+        print("FOUND → Plot " .. plotNum .. " : " .. signText)
+        
+        local pos = stealPositions[plotName]
+        if pos then
+            -- Create visible marker part (client-sided)
+            local marker = Instance.new("Part")
+            marker.Name = "StealMarker_Plot" .. plotNum
+            marker.Size = Vector3.new(12, 1, 12)           -- fairly large flat marker
+            marker.Position = pos
+            marker.Anchored = true
+            marker.CanCollide = false
+            marker.Transparency = 0.4
+            marker.BrickColor = BrickColor.new("Bright red")
+            marker.Material = Enum.Material.Neon
+            marker.Parent = Workspace
+            
+            -- Optional billboard to show plot number
+            local bb = Instance.new("BillboardGui")
+            bb.Size = UDim2.new(0, 120, 0, 50)
+            bb.StudsOffset = Vector3.new(0, 4, 0)
+            bb.AlwaysOnTop = true
+            bb.Parent = marker
+            
+            local label = Instance.new("TextLabel")
+            label.Size = UDim2.new(1, 0, 1, 0)
+            label.BackgroundTransparency = 1
+            label.Text = "STEAL - Plot " .. plotNum
+            label.TextColor3 = Color3.new(1, 0.2, 0.2)
+            label.TextScaled = true
+            label.Font = Enum.Font.SourceSansBold
+            label.Parent = bb
+            
+            print("   → Marker created at " .. tostring(pos))
+        else
+            print("   → No steal position defined for plot " .. plotNum)
+        end
+    else
+        -- Optional: uncomment to see clean plots too
+        -- print("Plot " .. plotNum .. " → no match (" .. signText:sub(1,30) .. "...)")
+    end
+end
+
+print("\nScan finished. Found " .. foundCount .. " matching plot(s).")
+print("Markers are client-sided (only you see them).")
