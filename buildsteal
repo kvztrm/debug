@@ -1,134 +1,88 @@
--- Executor script: Scan for MULTIPLE target usernames → white steal markers + positions
+-- Executor script: TP to CENTER of HIGHEST PRIORITY brainrot/plot (Strawberry Elephant = #1)
 
 local Workspace = game:GetService("Workspace")
-local PlotsFolder = Workspace:FindFirstChild("Plots")
+local Players = game:GetService("Players")
+local LocalPlayer = Players.LocalPlayer
 
+local character = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
+local hrp = character:WaitForChild("HumanoidRootPart")  -- HumanoidRootPart
+
+local PlotsFolder = Workspace:FindFirstChild("Plots")
 if not PlotsFolder then
-    print("❌ Plots folder not found!")
+    print("❌ No 'Plots' folder found in Workspace!")
     return
 end
 
--- ALL target usernames (case-insensitive matching)
-local targetUsers = {
-    "La grande Combinasion",
-    "KarKirKirKurKur",
-    "Octamasu Noddledudu", 
-    "Rhino Toasterino",
-    "Bulbito Bandito Traktorito",
-    "Alessio",
-    "Chillin Chilli",
-    "Strawberry Elephant",
-    "Torrtuginni Dragonfruitinni"
+-- PRIORITY (1 = highest → teleports here first if found)
+local targets = {
+    {name = "Strawberry Elephant", prio = 1},
+    {name = "Torrtuginni Dragonfruitinni", prio = 2},
+    {name = "Chillin Chilli", prio = 3},
+    {name = "Alessio", prio = 4},
+    {name = "Bulbito Bandito Traktorito", prio = 5},
+    {name = "Rhino Toasterino", prio = 6},
+    {name = "Octamasu Noddledudu", prio = 7},
+    {name = "KarKirKirKurKur", prio = 8},
+    {name = "La grande Combinasion", prio = 9}
 }
 
--- Steal positions per plot
-local stealPositions = {
-    ["1"] = Vector3.new(-170, 7, 194),
-    ["2"] = Vector3.new(-282, 7, 126),
-    ["3"] = Vector3.new(-281, 7, -54),
-    ["4"] = Vector3.new(-182, 7, -133),
-    ["5"] = Vector3.new(-70, 7, -66),
-    ["6"] = Vector3.new(-71, 7, 114)
+-- Approximate CENTER positions of plots 1-6 (middle of the plot base)
+-- These are common-ish coords from Steal a Brainrot videos/guides — adjust if off!
+local plotCenters = {
+    ["1"] = Vector3.new(-170, 7, 194),   -- Plot 1 center
+    ["2"] = Vector3.new(-282, 7, 126),   -- Plot 2 center
+    ["3"] = Vector3.new(-281, 7, -54),   -- Plot 3 center
+    ["4"] = Vector3.new(-182, 7, -133),  -- Plot 4 center
+    ["5"] = Vector3.new(-70, 7, -66),    -- Plot 5 center
+    ["6"] = Vector3.new(-71, 7, 114)     -- Plot 6 center
 }
 
-print("🔍 Scanning plots 1–6 for target users...\n")
+print("🔍 Scanning plots 1-6 for brainrots (highest prio first)...")
 
-local foundUsers = {}
+local best = nil
+local bestPrio = math.huge
 
-for plotNum = 1, 6 do
-    local plotName = tostring(plotNum)
+for num = 1, 6 do
+    local plotName = tostring(num)
     local plot = PlotsFolder:FindFirstChild(plotName)
+    if not plot then continue end
     
-    if not plot then
-        continue
+    -- Path to sign text (Sign → SignBlock → BaseSign → Text1)
+    local txtObj = plot.Sign
+    if txtObj then txtObj = txtObj.SignBlock end
+    if txtObj then txtObj = txtObj.BaseSign end
+    if txtObj then txtObj = txtObj.Text1 end
+    
+    local text = ""
+    if txtObj and txtObj:IsA("TextLabel") then
+        text = txtObj.Text or ""
     end
     
-    -- Navigate to Text1
-    local textLabel = plot:FindFirstChild("Sign")
-    if textLabel then
-        textLabel = textLabel:FindFirstChild("SignBlock")
-        if textLabel then
-            textLabel = textLabel:FindFirstChild("BaseSign")
-            if textLabel then
-                textLabel = textLabel:FindFirstChild("Text1")
+    -- Check each target
+    for _, t in ipairs(targets) do
+        if text:lower():find(t.name:lower()) then
+            if t.prio < bestPrio then
+                bestPrio = t.prio
+                best = {
+                    plot = num,
+                    name = t.name,
+                    pos   = plotCenters[plotName]
+                }
+                print("Found #" .. t.prio .. ": " .. t.name .. " → Plot " .. num)
             end
-        end
-    end
-    
-    local signText = ""
-    if textLabel and textLabel:IsA("TextLabel") then
-        signText = textLabel.Text or ""
-    end
-    
-    -- Check ALL target users (case-insensitive)
-    for _, target in ipairs(targetUsers) do
-        if signText:lower():find(target:lower()) then
-            local pos = stealPositions[plotName]
-            table.insert(foundUsers, {
-                plot = plotNum,
-                user = target,
-                text = signText,
-                position = pos
-            })
-            
-            print(string.format("✅ PLOT %d → %s", plotNum, target))
-            print("   📍 Position: " .. tostring(pos))
-            print()
-            
-            -- Create WHITE glowing marker
-            if pos then
-                local marker = Instance.new("Part")
-                marker.Name = "StealTarget_Plot" .. plotNum .. "_" .. target:gsub(" ", "_")
-                marker.Size = Vector3.new(14, 1.5, 14)
-                marker.Position = pos
-                marker.Anchored = true
-                marker.CanCollide = false
-                marker.Transparency = 0.3
-                marker.Color = Color3.new(1, 1, 1)  -- PURE WHITE
-                marker.Material = Enum.Material.Neon
-                marker.Parent = Workspace
-                
-                -- White billboard label
-                local bb = Instance.new("BillboardGui")
-                bb.Size = UDim2.new(0, 160, 0, 60)
-                bb.StudsOffset = Vector3.new(0, 5, 0)
-                bb.AlwaysOnTop = true
-                bb.Parent = marker
-                
-                local label = Instance.new("TextLabel")
-                label.Size = UDim2.new(1, 0, 1, 0)
-                label.BackgroundTransparency = 1
-                label.Text = target .. "\nPlot " .. plotNum
-                label.TextColor3 = Color3.new(1, 1, 1)
-                label.TextStrokeTransparency = 0
-                label.TextStrokeColor3 = Color3.new(0, 0, 0)
-                label.TextScaled = true
-                label.Font = Enum.Font.SourceSansBold
-                label.Parent = bb
-                
-                -- Make it pulse (optional eye-candy)
-                spawn(function()
-                    while marker.Parent do
-                        marker.Transparency = 0.3
-                        task.wait(0.8)
-                        marker.Transparency = 0.6
-                        task.wait(0.8)
-                    end
-                end)
-            end
-            break  -- only match once per plot
+            break  -- one match per plot
         end
     end
 end
 
-print("🎯 SCAN COMPLETE")
-print("Found " .. #foundUsers .. " target plots")
-
-if #foundUsers == 0 then
-    print("No matches found.")
-end
-
-print("\n📋 SUMMARY:")
-for _, hit in ipairs(foundUsers) do
-    print(string.format("Plot %d: %s @ %s", hit.plot, hit.user, tostring(hit.position)))
+if best then
+    print("\n🚀 TP to CENTER of " .. best.name .. " (Plot " .. best.plot .. ")")
+    print("   Exact pos: " .. tostring(best.pos))
+    
+    -- Teleport DEAD CENTER (no extra height)
+    hrp.CFrame = CFrame.new(best.pos)
+    
+    print("✅ Teleported to brainrot center!")
+else
+    print("\n❌ No matching brainrots found in plots 1-6")
 end
