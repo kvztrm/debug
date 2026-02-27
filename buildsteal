@@ -1,14 +1,27 @@
--- Executor script: Find "thediamondtapperking" signs → place steal marker
+-- Executor script: Scan for MULTIPLE target usernames → white steal markers + positions
 
 local Workspace = game:GetService("Workspace")
 local PlotsFolder = Workspace:FindFirstChild("Plots")
 
 if not PlotsFolder then
-    print("Plots folder not found in Workspace!")
+    print("❌ Plots folder not found!")
     return
 end
 
--- Steal positions per plot (X, Y, Z)
+-- ALL target usernames (case-insensitive matching)
+local targetUsers = {
+    "La grande Combinasion",
+    "KarKirKirKurKur",
+    "Octamasu Noddledudu", 
+    "Rhino Toasterino",
+    "Bulbito Bandito Traktorito",
+    "Alessio",
+    "Chillin Chilli",
+    "Strawberry Elephant",
+    "Torrtuginni Dragonfruitinni"
+}
+
+-- Steal positions per plot
 local stealPositions = {
     ["1"] = Vector3.new(-170, 7, 194),
     ["2"] = Vector3.new(-282, 7, 126),
@@ -18,75 +31,104 @@ local stealPositions = {
     ["6"] = Vector3.new(-71, 7, 114)
 }
 
-print("Scanning plots 1–6 for 'thediamondtapperking'...\n")
+print("🔍 Scanning plots 1–6 for target users...\n")
 
-local foundCount = 0
+local foundUsers = {}
 
 for plotNum = 1, 6 do
     local plotName = tostring(plotNum)
     local plot = PlotsFolder:FindFirstChild(plotName)
     
     if not plot then
-        print("Plot " .. plotNum .. " → missing")
         continue
     end
     
-    -- Path to the text
-    local signPart     = plot:FindFirstChild("Sign")
-    local signBlock    = signPart and signPart:FindFirstChild("SignBlock")
-    local baseSign     = signBlock and signBlock:FindFirstChild("BaseSign")
-    local textLabel    = baseSign and baseSign:FindFirstChild("Text1")
+    -- Navigate to Text1
+    local textLabel = plot:FindFirstChild("Sign")
+    if textLabel then
+        textLabel = textLabel:FindFirstChild("SignBlock")
+        if textLabel then
+            textLabel = textLabel:FindFirstChild("BaseSign")
+            if textLabel then
+                textLabel = textLabel:FindFirstChild("Text1")
+            end
+        end
+    end
     
     local signText = ""
     if textLabel and textLabel:IsA("TextLabel") then
         signText = textLabel.Text or ""
     end
     
-    -- Case-insensitive check
-    if signText:lower():find("thediamondtapperking") then
-        foundCount = foundCount + 1
-        
-        print("FOUND → Plot " .. plotNum .. " : " .. signText)
-        
-        local pos = stealPositions[plotName]
-        if pos then
-            -- Create visible marker part (client-sided)
-            local marker = Instance.new("Part")
-            marker.Name = "StealMarker_Plot" .. plotNum
-            marker.Size = Vector3.new(12, 1, 12)           -- fairly large flat marker
-            marker.Position = pos
-            marker.Anchored = true
-            marker.CanCollide = false
-            marker.Transparency = 0.4
-            marker.BrickColor = BrickColor.new("Bright red")
-            marker.Material = Enum.Material.Neon
-            marker.Parent = Workspace
+    -- Check ALL target users (case-insensitive)
+    for _, target in ipairs(targetUsers) do
+        if signText:lower():find(target:lower()) then
+            local pos = stealPositions[plotName]
+            table.insert(foundUsers, {
+                plot = plotNum,
+                user = target,
+                text = signText,
+                position = pos
+            })
             
-            -- Optional billboard to show plot number
-            local bb = Instance.new("BillboardGui")
-            bb.Size = UDim2.new(0, 120, 0, 50)
-            bb.StudsOffset = Vector3.new(0, 4, 0)
-            bb.AlwaysOnTop = true
-            bb.Parent = marker
+            print(string.format("✅ PLOT %d → %s", plotNum, target))
+            print("   📍 Position: " .. tostring(pos))
+            print()
             
-            local label = Instance.new("TextLabel")
-            label.Size = UDim2.new(1, 0, 1, 0)
-            label.BackgroundTransparency = 1
-            label.Text = "STEAL - Plot " .. plotNum
-            label.TextColor3 = Color3.new(1, 0.2, 0.2)
-            label.TextScaled = true
-            label.Font = Enum.Font.SourceSansBold
-            label.Parent = bb
-            
-            print("   → Marker created at " .. tostring(pos))
-        else
-            print("   → No steal position defined for plot " .. plotNum)
+            -- Create WHITE glowing marker
+            if pos then
+                local marker = Instance.new("Part")
+                marker.Name = "StealTarget_Plot" .. plotNum .. "_" .. target:gsub(" ", "_")
+                marker.Size = Vector3.new(14, 1.5, 14)
+                marker.Position = pos
+                marker.Anchored = true
+                marker.CanCollide = false
+                marker.Transparency = 0.3
+                marker.Color = Color3.new(1, 1, 1)  -- PURE WHITE
+                marker.Material = Enum.Material.Neon
+                marker.Parent = Workspace
+                
+                -- White billboard label
+                local bb = Instance.new("BillboardGui")
+                bb.Size = UDim2.new(0, 160, 0, 60)
+                bb.StudsOffset = Vector3.new(0, 5, 0)
+                bb.AlwaysOnTop = true
+                bb.Parent = marker
+                
+                local label = Instance.new("TextLabel")
+                label.Size = UDim2.new(1, 0, 1, 0)
+                label.BackgroundTransparency = 1
+                label.Text = target .. "\nPlot " .. plotNum
+                label.TextColor3 = Color3.new(1, 1, 1)
+                label.TextStrokeTransparency = 0
+                label.TextStrokeColor3 = Color3.new(0, 0, 0)
+                label.TextScaled = true
+                label.Font = Enum.Font.SourceSansBold
+                label.Parent = bb
+                
+                -- Make it pulse (optional eye-candy)
+                spawn(function()
+                    while marker.Parent do
+                        marker.Transparency = 0.3
+                        task.wait(0.8)
+                        marker.Transparency = 0.6
+                        task.wait(0.8)
+                    end
+                end)
+            end
+            break  -- only match once per plot
         end
-    else
-        -- Optional: uncomment to see clean plots too
-        -- print("Plot " .. plotNum .. " → no match (" .. signText:sub(1,30) .. "...)")
     end
 end
 
-print("\nScan finished. Found " .. foundCount .. " matching plot(s).")
-print("Markers are client-sided (only you see them).")
+print("🎯 SCAN COMPLETE")
+print("Found " .. #foundUsers .. " target plots")
+
+if #foundUsers == 0 then
+    print("No matches found.")
+end
+
+print("\n📋 SUMMARY:")
+for _, hit in ipairs(foundUsers) do
+    print(string.format("Plot %d: %s @ %s", hit.plot, hit.user, tostring(hit.position)))
+end
