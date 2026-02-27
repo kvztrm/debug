@@ -1,42 +1,63 @@
--- Executor script: WHITE ESP HIGHLIGHT on ALL MODELS (see-through walls)
--- Paste & execute - highlights EVERY model in workspace
+-- Executor script: WHITE ESP ONLY on specific brainrot usernames
+-- Highlights ONLY these exact names in Steal a Brainrot plots
 
 local Workspace = game:GetService("Workspace")
 local RunService = game:GetService("RunService")
 local Players = game:GetService("Players")
 local LocalPlayer = Players.LocalPlayer
 
+-- EXACT target usernames (case-sensitive match)
+local targetUsers = {
+    "La grande Combinasion",
+    "KarKirKirKurKur",
+    "Octamasu Noddledudu",
+    "Rhino Toasterino",
+    "Bulbito Bandito Traktorito",
+    "Alessio",
+    "Chillin Chilli",
+    "Strawberry Elephant",
+    "Torrtuginni Dragonfruitinni"
+}
+
 local highlightedModels = {}
 local highlights = {}
 
--- Create white highlight on model
-local function addHighlight(model)
-    if highlightedModels[model] then return end  -- already highlighted
+-- Check if model name matches target
+local function isTargetUser(modelName)
+    for _, target in ipairs(targetUsers) do
+        if modelName == target then
+            return true
+        end
+    end
+    return false
+end
+
+-- Create white highlight + name tag
+local function addHighlight(model, username)
+    if highlightedModels[model] then return end
     
     highlightedModels[model] = true
     
-    -- Main highlight (white outline + fill)
+    -- White Highlight (see-through walls)
     local highlight = Instance.new("Highlight")
-    highlight.FillColor = Color3.new(1, 1, 1)      -- pure white fill
-    highlight.OutlineColor = Color3.new(1, 1, 1)   -- pure white outline
-    highlight.FillTransparency = 0.4               -- semi-transparent fill
-    highlight.OutlineTransparency = 0              -- solid outline
+    highlight.FillColor = Color3.new(1, 1, 1)
+    highlight.OutlineColor = Color3.new(1, 1, 1)
+    highlight.FillTransparency = 0.3
+    highlight.OutlineTransparency = 0
     highlight.Parent = model
-    
     table.insert(highlights, highlight)
     
-    -- Optional: floating name tag (shows model name)
+    -- Floating username tag
     local billboard = Instance.new("BillboardGui")
-    billboard.Size = UDim2.new(0, 200, 0, 50)
-    billboard.StudsOffset = Vector3.new(0, 3, 0)
+    billboard.Size = UDim2.new(0, 220, 0, 60)
+    billboard.StudsOffset = Vector3.new(0, 4, 0)
     billboard.AlwaysOnTop = true
-    billboard.LightInfluence = 0
     billboard.Parent = model.PrimaryPart or model:FindFirstChildWhichIsA("BasePart") or model
     
     local label = Instance.new("TextLabel")
     label.Size = UDim2.new(1, 0, 1, 0)
     label.BackgroundTransparency = 1
-    label.Text = model.Name
+    label.Text = username
     label.TextColor3 = Color3.new(1, 1, 1)
     label.TextStrokeTransparency = 0
     label.TextStrokeColor3 = Color3.new(0, 0, 0)
@@ -44,39 +65,60 @@ local function addHighlight(model)
     label.Font = Enum.Font.SourceSansBold
     label.Parent = billboard
     
-    print("✅ Highlighted: " .. model:GetFullName())
+    -- Pulsing effect (stands out)
+    spawn(function()
+        while highlight.Parent do
+            highlight.FillTransparency = 0.3
+            task.wait(0.6)
+            highlight.FillTransparency = 0.6
+            task.wait(0.6)
+        end
+    end)
+    
+    print("✅ HIGHLIGHTED: " .. username .. " → " .. model:GetFullName())
 end
 
--- Scan ALL models in workspace
-local function scanModels()
-    for _, obj in ipairs(Workspace:GetDescendants()) do
-        if obj:IsA("Model") and obj ~= Workspace then
-            addHighlight(obj)
+-- Scan plots for target brainrots
+local function scanPlots()
+    local plots = Workspace:FindFirstChild("Plots")
+    if not plots then return end
+    
+    for plotNum = 1, 6 do
+        local plotName = tostring(plotNum)
+        local plot = plots:FindFirstChild(plotName)
+        if not plot then continue end
+        
+        -- Check ALL models in this plot
+        for _, model in ipairs(plot:GetDescendants()) do
+            if model:IsA("Model") and isTargetUser(model.Name) then
+                addHighlight(model, model.Name)
+            end
+        end
+        
+        -- Also check plot itself
+        if isTargetUser(plot.Name) then
+            addHighlight(plot, plot.Name)
         end
     end
 end
 
 -- Initial scan
-print("🔍 Scanning all models for white ESP...")
-scanModels()
+print("🔍 Scanning plots 1-6 for target brainrots...")
+scanPlots()
 
--- Continuous scan (catches new models/respawns)
+-- Continuous scan (new brainrots / respawns)
 local connection
 connection = RunService.Heartbeat:Connect(function()
-    for _, obj in ipairs(Workspace:GetDescendants()) do
-        if obj:IsA("Model") and not highlightedModels[obj] then
-            addHighlight(obj)
-        end
-    end
+    scanPlots()
 end)
 
--- Clean up on script end
-game:GetService("Players").LocalPlayer.CharacterRemoving:Connect(function()
+-- Cleanup
+LocalPlayer.CharacterRemoving:Connect(function()
     connection:Disconnect()
     for _, h in ipairs(highlights) do
-        if h then pcall(function() h:Destroy() end) end
+        if h then pcall(h.Destroy, h) end
     end
 end)
 
-print("✨ WHITE ESP ACTIVE - All models highlighted (see-through walls)")
-print("Total models found: " .. #highlights)
+print("✨ WHITE ESP ACTIVE - Only target brainrots highlighted!")
+print("Targets: " .. table.concat(targetUsers, ", "))
