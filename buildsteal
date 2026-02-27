@@ -1,13 +1,13 @@
--- Executor script: WHITE ESP ONLY on specific brainrot usernames
--- Highlights ONLY these exact names in Steal a Brainrot plots
+-- Fixed White ESP - ONLY exact target brainrot usernames in Plots 1-6
+-- See-through walls, pulsing white highlight + name tag
 
 local Workspace = game:GetService("Workspace")
 local RunService = game:GetService("RunService")
 local Players = game:GetService("Players")
 local LocalPlayer = Players.LocalPlayer
 
--- EXACT target usernames (case-sensitive match)
-local targetUsers = {
+-- Exact names (case-sensitive - adjust if game uses different casing)
+local targets = {
     "La grande Combinasion",
     "KarKirKirKurKur",
     "Octamasu Noddledudu",
@@ -19,106 +19,126 @@ local targetUsers = {
     "Torrtuginni Dragonfruitinni"
 }
 
-local highlightedModels = {}
-local highlights = {}
+local highlighted = {}     -- prevent duplicate highlights
+local allHighlights = {}   -- for cleanup
 
--- Check if model name matches target
-local function isTargetUser(modelName)
-    for _, target in ipairs(targetUsers) do
-        if modelName == target then
+-- Check if name matches exactly one of the targets
+local function isTarget(name)
+    for _, t in ipairs(targets) do
+        if name == t then
             return true
         end
     end
     return false
 end
 
--- Create white highlight + name tag
-local function addHighlight(model, username)
-    if highlightedModels[model] then return end
-    
-    highlightedModels[model] = true
-    
-    -- White Highlight (see-through walls)
-    local highlight = Instance.new("Highlight")
-    highlight.FillColor = Color3.new(1, 1, 1)
-    highlight.OutlineColor = Color3.new(1, 1, 1)
-    highlight.FillTransparency = 0.3
-    highlight.OutlineTransparency = 0
-    highlight.Parent = model
-    table.insert(highlights, highlight)
-    
-    -- Floating username tag
-    local billboard = Instance.new("BillboardGui")
-    billboard.Size = UDim2.new(0, 220, 0, 60)
-    billboard.StudsOffset = Vector3.new(0, 4, 0)
-    billboard.AlwaysOnTop = true
-    billboard.Parent = model.PrimaryPart or model:FindFirstChildWhichIsA("BasePart") or model
-    
-    local label = Instance.new("TextLabel")
-    label.Size = UDim2.new(1, 0, 1, 0)
-    label.BackgroundTransparency = 1
-    label.Text = username
-    label.TextColor3 = Color3.new(1, 1, 1)
-    label.TextStrokeTransparency = 0
-    label.TextStrokeColor3 = Color3.new(0, 0, 0)
-    label.TextScaled = true
-    label.Font = Enum.Font.SourceSansBold
-    label.Parent = billboard
-    
-    -- Pulsing effect (stands out)
-    spawn(function()
-        while highlight.Parent do
-            highlight.FillTransparency = 0.3
-            task.wait(0.6)
-            highlight.FillTransparency = 0.6
-            task.wait(0.6)
+-- Add white see-through highlight + floating label
+local function highlightModel(model, displayName)
+    if highlighted[model] then return end
+    highlighted[model] = true
+
+    local hl = Instance.new("Highlight")
+    hl.Name = "TargetESP"
+    hl.FillColor = Color3.new(1, 1, 1)
+    hl.OutlineColor = Color3.new(1, 1, 1)
+    hl.FillTransparency = 0.35
+    hl.OutlineTransparency = 0
+    hl.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop  -- very important for see-through
+    hl.Parent = model
+
+    table.insert(allHighlights, hl)
+
+    -- Floating name tag
+    local root = model.PrimaryPart or model:FindFirstChildWhichIsA("BasePart", true)
+    if root then
+        local bb = Instance.new("BillboardGui")
+        bb.Name = "NameTag"
+        bb.Adornee = root
+        bb.Size = UDim2.new(0, 240, 0, 60)
+        bb.StudsOffset = Vector3.new(0, 3.5, 0)
+        bb.AlwaysOnTop = true
+        bb.Parent = root
+
+        local txt = Instance.new("TextLabel")
+        txt.Size = UDim2.new(1, 0, 1, 0)
+        txt.BackgroundTransparency = 1
+        txt.Text = displayName
+        txt.TextColor3 = Color3.new(1, 1, 1)
+        txt.TextStrokeTransparency = 0
+        txt.TextStrokeColor3 = Color3.new(0, 0, 0)
+        txt.TextScaled = true
+        txt.Font = Enum.Font.GothamBold
+        txt.Parent = bb
+
+        table.insert(allHighlights, bb)
+    end
+
+    -- Gentle pulse
+    task.spawn(function()
+        while hl.Parent do
+            hl.FillTransparency = 0.35
+            task.wait(0.7)
+            hl.FillTransparency = 0.65
+            task.wait(0.7)
         end
     end)
-    
-    print("✅ HIGHLIGHTED: " .. username .. " → " .. model:GetFullName())
+
+    print("Highlighted:", displayName, "→", model:GetFullName())
 end
 
--- Scan plots for target brainrots
-local function scanPlots()
-    local plots = Workspace:FindFirstChild("Plots")
-    if not plots then return end
-    
-    for plotNum = 1, 6 do
-        local plotName = tostring(plotNum)
-        local plot = plots:FindFirstChild(plotName)
+-- Scan only Plots folder
+local function scan()
+    local plotsFolder = Workspace:FindFirstChild("Plots")
+    if not plotsFolder then
+        print("Plots folder not found")
+        return
+    end
+
+    local found = 0
+    for i = 1, 6 do
+        local plot = plotsFolder:FindFirstChild(tostring(i))
         if not plot then continue end
-        
-        -- Check ALL models in this plot
-        for _, model in ipairs(plot:GetDescendants()) do
-            if model:IsA("Model") and isTargetUser(model.Name) then
-                addHighlight(model, model.Name)
+
+        for _, obj in ipairs(plot:GetDescendants()) do
+            if obj:IsA("Model") and isTarget(obj.Name) then
+                highlightModel(obj, obj.Name)
+                found += 1
             end
         end
-        
-        -- Also check plot itself
-        if isTargetUser(plot.Name) then
-            addHighlight(plot, plot.Name)
+
+        -- Also check the plot model itself
+        if isTarget(plot.Name) then
+            highlightModel(plot, plot.Name)
+            found += 1
         end
+    end
+
+    if found == 0 then
+        print("No matching brainrots found in plots 1–6")
+    else
+        print("Found and highlighted", found, "target brainrot(s)")
     end
 end
 
--- Initial scan
-print("🔍 Scanning plots 1-6 for target brainrots...")
-scanPlots()
+-- Run once + repeat every few seconds
+print("Starting targeted white ESP scan...")
+scan()
 
--- Continuous scan (new brainrots / respawns)
-local connection
-connection = RunService.Heartbeat:Connect(function()
-    scanPlots()
-end)
-
--- Cleanup
-LocalPlayer.CharacterRemoving:Connect(function()
-    connection:Disconnect()
-    for _, h in ipairs(highlights) do
-        if h then pcall(h.Destroy, h) end
+local connection = RunService.Heartbeat:Connect(function()
+    if tick() % 4 < 0.05 then  -- roughly every 4 seconds
+        scan()
     end
 end)
 
-print("✨ WHITE ESP ACTIVE - Only target brainrots highlighted!")
-print("Targets: " .. table.concat(targetUsers, ", "))
+-- Cleanup when character respawns/dies
+LocalPlayer.CharacterRemoving:Connect(function()
+    connection:Disconnect()
+    for _, item in ipairs(allHighlights) do
+        pcall(function() item:Destroy() end)
+    end
+    allHighlights = {}
+    highlighted = {}
+    print("ESP cleaned up")
+end)
+
+print("White ESP running → ONLY targets:", table.concat(targets, ", "))
