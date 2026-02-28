@@ -59,7 +59,7 @@ while true do
         local targHRP = targetChar.HumanoidRootPart
         
         local forward = targHRP.CFrame.LookVector
-        local pos     = targHRP.Position - forward * 1.4
+        local pos     = targHRP.Position - forward * 1.7
         myHRP.CFrame  = CFrame.new(pos, targHRP.Position)
     end
 
@@ -76,7 +76,7 @@ while true do
 
             pcall(function() remote:InvokeServer(false) end)
             print(" → Closed menu (false)")
-            task.wait(0.2)
+            task.wait(0.5)
 
             -- Press KEY 1
             pcall(function()
