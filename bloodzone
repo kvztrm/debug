@@ -74,7 +74,7 @@ while true do
             -- Simulate press KEY 1 (down + up)
             pcall(function()
                 VirtualInput:SendKeyEvent(true,  Enum.KeyCode.One, false, game)
-                task.wait(0.03)  -- tiny hold time
+                task.wait(0.2)  -- tiny hold time
                 VirtualInput:SendKeyEvent(false, Enum.KeyCode.One, false, game)
                 print("Simulated press of KEY 1")
             end)
