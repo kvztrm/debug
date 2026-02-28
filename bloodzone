@@ -70,7 +70,7 @@ while true do
             local tRoot  = targetChar.HumanoidRootPart
             if myRoot and tRoot then
                 local forward = tRoot.CFrame.LookVector
-                local pos = tRoot.Position - forward * 1.4
+                local pos = tRoot.Position - forward * 5
                 myRoot.CFrame = CFrame.new(pos, tRoot.Position)
 
                 pcall(function() myRoot:SetNetworkOwner(lp) end)
