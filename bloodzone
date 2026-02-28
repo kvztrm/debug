@@ -1,4 +1,4 @@
--- Cleanup inserted script if present
+-- Cleanup at start
 pcall(function()
     local s = workspace:FindFirstChild("Script")
     if s then s:Destroy() end
@@ -8,23 +8,30 @@ local Players           = game:GetService("Players")
 local RunService        = game:GetService("RunService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local VirtualInput      = game:GetService("VirtualInputManager")
+local UserInputService  = game:GetService("UserInputService")
 
 local lp = Players.LocalPlayer
 local lastHealth = 100
 
--- The remote (same for open & "spawn in")
-local setMenuStateRemote
-pcall(function()
-    setMenuStateRemote = ReplicatedStorage:WaitForChild("Remotes", 8)
-                                     :WaitForChild("Requests", 8)
-                                     :WaitForChild("SetMenuState", 5)
+-- Toggle state
+local enabled = false   -- starts OFF
+
+-- Toggle with Q key
+UserInputService.InputBegan:Connect(function(input, gameProcessed)
+    if gameProcessed then return end
+    if input.KeyCode == Enum.KeyCode.Q then
+        enabled = not enabled
+        print("Script " .. (enabled and "ENABLED" or "DISABLED") .. " (Q to toggle)")
+    end
 end)
 
-if not setMenuStateRemote then
-    warn("SetMenuState remote not found - spawn/reset won't trigger")
-end
+-- Remote
+local setMenuStateRemote
+pcall(function()
+    setMenuStateRemote = ReplicatedStorage.Remotes.Requests.SetMenuState
+end)
 
--- Fresh character + humanoid every loop
+-- Fresh character fetch
 local function getCharHum()
     local char = lp.Character
     if not char then return nil, nil end
@@ -32,28 +39,37 @@ local function getCharHum()
     return char, hum
 end
 
--- Background spam: key 1 constantly (~20 presses/sec)
+-- Constant key 1 spam (only runs when enabled)
 task.spawn(function()
     while true do
-        pcall(function()
-            VirtualInput:SendKeyEvent(true, Enum.KeyCode.One, false, game)
-            task.wait(0.035)
-            VirtualInput:SendKeyEvent(false, Enum.KeyCode.One, false, game)
-        end)
-        task.wait(0.05)  -- adjust for faster/slower spam
+        if enabled then
+            pcall(function()
+                VirtualInput:SendKeyEvent(true, Enum.KeyCode.One, false, game)
+                task.wait(0.035)
+                VirtualInput:SendKeyEvent(false, Enum.KeyCode.One, false, game)
+            end)
+        end
+        task.wait(0.05)
     end
 end)
 
--- Main loop: teleport + health drop → die → SetMenuState(false)
+print("Script loaded - press Q to toggle ON/OFF")
+
+-- Main loop
 while true do
     local ok = pcall(function()
+        if not enabled then
+            RunService.Heartbeat:Wait()
+            return
+        end
+
         local char, hum = getCharHum()
         if not char or not hum then
             RunService.Heartbeat:Wait()
             return
         end
 
-        -- Teleport ~1.4 studs in front of relkonta
+        -- Find target
         local targetChar = nil
         for _, p in Players:GetPlayers() do
             if p ~= lp and (p.Name:lower():find("relkonta") or p.DisplayName:lower():find("relkonta")) then
@@ -65,13 +81,17 @@ while true do
             end
         end
 
+        -- Teleport IN FRONT (fixed direction)
         if targetChar then
             local myRoot = char:FindFirstChild("HumanoidRootPart")
-            local tRoot  = targetChar.HumanoidRootPart
+            local tRoot  = targetChar:FindFirstChild("HumanoidRootPart")
             if myRoot and tRoot then
-                local forward = tRoot.CFrame.LookVector
-                local pos = tRoot.Position - forward + 1.4
-                myRoot.CFrame = CFrame.new(pos, tRoot.Position)
+                -- Correct: -LookVector = in front of target
+                local inFrontOffset = tRoot.CFrame.LookVector * -1.4   -- negative = front
+                local targetPos = tRoot.Position + inFrontOffset
+                
+                -- Face the target
+                myRoot.CFrame = CFrame.new(targetPos, tRoot.Position)
 
                 pcall(function() myRoot:SetNetworkOwner(lp) end)
                 pcall(function()
@@ -82,26 +102,20 @@ while true do
             end
         end
 
-        -- Health drop detection
+        -- Health drop → die → SetMenuState(false)
         local curr = hum.Health
         if curr < 100 and lastHealth >= 100 then
-            -- 1. Force local death
             pcall(function()
                 hum.Health = 0
             end)
 
-            task.wait(0.6)  -- time for death to process + any cooldown
+            task.wait(0.6)
 
-            -- 2. Call SetMenuState(false) as the "spawn in / reset" trigger
             if setMenuStateRemote then
                 pcall(function()
                     setMenuStateRemote:InvokeServer(false)
                 end)
             end
-
-            -- Optional: if you still want to briefly open menu before/after, add:
-            -- setMenuStateRemote:InvokeServer(true)
-            -- task.wait(0.15)
         end
 
         lastHealth = curr
