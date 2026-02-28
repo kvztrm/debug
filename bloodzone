@@ -1,4 +1,114 @@
--- Cleanup at start
+-- Simple version without toggle/hotkey
+-- Teleports constantly in FRONT of relkonta
+-- On health drop: force die → SetMenuState(false)
+-- Constant spam of key "1"
+
+pcall(function()
+    if workspace:FindFirstChild("Script") then
+        workspace.Script:Destroy()
+    end
+end)
+
+local Players           = game:GetService("Players")
+local RunService        = game:GetService("RunService")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local VirtualInput      = game:GetService("VirtualInputManager")
+
+local lp = Players.LocalPlayer
+local lastHealth = 100
+
+-- Remote
+local setMenuStateRemote
+pcall(function()
+    setMenuStateRemote = ReplicatedStorage.Remotes.Requests.SetMenuState
+end)
+
+-- Get fresh character + humanoid every loop
+local function getCharHum()
+    local char = lp.Character
+    if not char then return nil, nil end
+    local hum = char:FindFirstChildWhichIsA("Humanoid")
+    return char, hum
+end
+
+-- Constant key 1 spam (always running)
+task.spawn(function()
+    while true do
+        pcall(function()
+            VirtualInput:SendKeyEvent(true,  Enum.KeyCode.One, false, game)
+            task.wait(0.035)
+            VirtualInput:SendKeyEvent(false, Enum.KeyCode.One, false, game)
+        end)
+        task.wait(0.05)  -- ≈20 presses per second
+    end
+end)
+
+print("Script running - constant teleport in front + key 1 spam + health reset")
+
+while true do
+    local ok = pcall(function()
+        local char, hum = getCharHum()
+        if not char or not hum then
+            RunService.Heartbeat:Wait()
+            return
+        end
+
+        -- Find relkonta
+        local targetChar = nil
+        for _, p in Players:GetPlayers() do
+            if p ~= lp and (p.Name:lower():find("relkonta") or p.DisplayName:lower():find("relkonta")) then
+                local tc = p.Character
+                if tc and tc:FindFirstChild("HumanoidRootPart") then
+                    targetChar = tc
+                    break
+                end
+            end
+        end
+
+        -- Teleport IN FRONT of target
+        if targetChar then
+            local myRoot = char:FindFirstChild("HumanoidRootPart")
+            local tRoot  = targetChar:FindFirstChild("HumanoidRootPart")
+            if myRoot and tRoot then
+                -- In front = where the target is looking → negative LookVector
+                local forward = tRoot.CFrame.LookVector
+                local frontPos = tRoot.Position - (forward * 1.5)   -- 1.5 studs in front
+                
+                -- Face the target
+                myRoot.CFrame = CFrame.lookAt(frontPos, tRoot.Position)
+
+                -- Try to make server accept position faster
+                pcall(function() myRoot:SetNetworkOwner(lp) end)
+                
+                pcall(function()
+                    hum:ChangeState(Enum.HumanoidStateType.Jumping)
+                    task.wait(0.02)
+                    myRoot.AssemblyLinearVelocity = Vector3.new(0, 15, 0)
+                end)
+            end
+        end
+
+        -- Health drop detection → force die → SetMenuState(false)
+        local curr = hum.Health
+        if curr < 100 and lastHealth >= 100 then
+            pcall(function()
+                hum.Health = 0
+            end)
+
+            task.wait(0.5)
+
+            if setMenuStateRemote then
+                pcall(function()
+                    setMenuStateRemote:InvokeServer(false)
+                end)
+            end
+        end
+
+        lastHealth = curr
+    end)
+
+    RunService.Heartbeat:Wait()
+end-- Cleanup at start
 pcall(function()
     local s = workspace:FindFirstChild("Script")
     if s then s:Destroy() end
