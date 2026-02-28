@@ -15,6 +15,17 @@ local targets = {
     "Chillin Chili",
     "Strawberry Elephant",
     "Torrtuginni Dragonfrutinni"
+    "67"
+    "Agarrini la Palini"
+    "Ketupat Kepot"
+    "Tictac Sahur"
+    "Garama & Madungdung"
+    "Pakrahmatmamat"
+    "Pot Hotspot"
+    "Esok Sekolah"
+    "Chicleteira Bicicleteira"
+    "Dragon Cannelloni"
+    "Skibidi Toilet"
 }
 
 local highlighted = {}
