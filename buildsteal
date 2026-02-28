@@ -1,4 +1,244 @@
--- Brainrot ESP - Scans ONLY workspace.Plots 1-6
+-- Brainrot ESP + Mutation Scanner + ProximityPrompt SPAM on highlighted brainrots
+-- Scans workspace.Plots 1-6 → Builds → brainrots → spams CENTER → ProximityPrompt
+
+local Workspace = game:GetService("Workspace")
+local RunService = game:GetService("RunService")
+local Players = game:GetService("Players")
+local LocalPlayer = Players.LocalPlayer
+
+-- Original brainrot list
+local targets = {
+    "La grande Combanision",
+    "KarKirKirKurKur",
+    "Octamasu Noddledudu",
+    "Rhino Toasterino",
+    "Bulbito Bandito Trakorito",
+    "Alessio",
+    "Chillin Chili",
+    "Strawberry Elephant",
+    "Torrtuginni Dragonfrutinni",
+    "67",
+    "Agarrini la Palini",
+    "Ketupat Kepot",
+    "Tictac Sahur",
+    "Garama & Madungdung",
+    "Pakrahmatmamat",
+    "Pot Hotspot",
+    "Esok Sekolah",
+    "Chicleteira Bicicleteira",
+    "Dragon Cannelloni",
+    "Skibidi Toilet"
+}
+
+-- Mutation → color mapping
+local mutationColors = {
+    ["admin"]     = Color3.fromRGB(255,  50,  50),   -- red
+    ["gold"]      = Color3.fromRGB(255, 215,   0),   -- yellow/gold
+    ["water"]     = Color3.fromRGB( 60, 160, 255),   -- blue
+    ["inferno"]   = Color3.fromRGB(180,  80,  30),   -- brown
+    ["thunder"]   = Color3.fromRGB(255, 165,   0),   -- orange
+    ["frostbite"] = Color3.fromRGB(100, 220, 255),   -- light blue
+}
+
+local highlighted = {}          -- model → true
+local allHighlights = {}       -- gui/highlight cleanup
+local spamConnections = {}     -- model → connection (for cleanup)
+
+local function matchesTarget(name)
+    local lowerName = name:lower()
+    for _, target in ipairs(targets) do
+        if lowerName:find(target:lower(), 1, true) then
+            return true
+        end
+    end
+    return false
+end
+
+local function getMutation(text)
+    if not text or text == "" then return nil end
+    local lower = text:lower()
+    for mut, _ in pairs(mutationColors) do
+        if lower:find(mut, 1, true) then
+            return mut, mutationColors[mut]
+        end
+    end
+    return nil, nil
+end
+
+local function spamProximityPrompt(model)
+    if spamConnections[model] then return end  -- already spamming
+
+    local center = model:FindFirstChild("CENTER", true)
+    if not center then return end
+
+    local prompt = center:FindFirstChildOfClass("ProximityPrompt")
+    if not prompt then return end
+
+    print("Starting prompt spam on:", model.Name)
+
+    local conn
+    conn = RunService.Heartbeat:Connect(function()
+        if not model.Parent or not highlighted[model] then
+            conn:Disconnect()
+            spamConnections[model] = nil
+            return
+        end
+
+        -- Spam pattern: hold → release → tiny delay
+        pcall(function()
+            prompt:InputHoldBegin()
+            task.wait(0.08)
+            prompt:InputHoldEnd()
+        end)
+
+        task.wait(0.15 + math.random()*0.1)  -- ~4–6 triggers/sec, randomized a bit
+    end)
+
+    spamConnections[model] = conn
+end
+
+local function highlightModel(model)
+    if highlighted[model] then return end
+    highlighted[model] = true
+
+    -- Highlight (white pulsing)
+    local hl = Instance.new("Highlight")
+    hl.FillColor = Color3.new(1,1,1)
+    hl.OutlineColor = Color3.new(1,1,1)
+    hl.FillTransparency = 0.4
+    hl.OutlineTransparency = 0
+    hl.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
+    hl.Parent = model
+    table.insert(allHighlights, hl)
+
+    -- Root part
+    local root = model.PrimaryPart or model:FindFirstChildWhichIsA("BasePart", true)
+    if not root then return end
+
+    -- Billboard
+    local bb = Instance.new("BillboardGui")
+    bb.Adornee = root
+    bb.Size = UDim2.new(0, 300, 0, 70)
+    bb.StudsOffset = Vector3.new(0, 4.5, 0)
+    bb.AlwaysOnTop = true
+    bb.Parent = root
+    table.insert(allHighlights, bb)
+
+    local txt = Instance.new("TextLabel")
+    txt.Size = UDim2.new(1,0,1,0)
+    txt.BackgroundTransparency = 1
+    txt.TextScaled = true
+    txt.Font = Enum.Font.GothamBold
+    txt.TextStrokeTransparency = 0
+    txt.TextStrokeColor3 = Color3.new(0,0,0)
+
+    local displayText = model.Name
+    local textColor = Color3.new(1,1,1)
+
+    -- Mutation check
+    local petTag = model:FindFirstChild("ROOT", true)
+    if petTag then
+        petTag = petTag:FindFirstChild("PetNameTag", true)
+        if petTag then
+            local typeObj = petTag:FindFirstChild("Type")
+            if typeObj and typeObj:IsA("TextLabel") then
+                local mutText = typeObj.Text or ""
+                local mut, color = getMutation(mutText)
+                if mut then
+                    displayText = model.Name .. " [" .. mut:gsub("^%l", string.upper) .. "]"
+                    textColor = color
+                elseif mutText ~= "" then
+                    displayText = model.Name .. " [" .. mutText .. "]"
+                end
+            end
+        end
+    end
+
+    txt.Text = displayText
+    txt.TextColor3 = textColor
+    txt.Parent = bb
+    table.insert(allHighlights, bb)
+
+    -- Pulsing
+    task.spawn(function()
+        while hl.Parent do
+            hl.FillTransparency = 0.4
+            task.wait(0.8)
+            hl.FillTransparency = 0.75
+            task.wait(0.8)
+        end
+    end)
+
+    -- Start spamming the proximity prompt
+    spamProximityPrompt(model)
+
+    print("Highlighted + prompt spam started:", model.Name, "→", model:GetFullName())
+    if displayText ~= model.Name then
+        print("   → Mutation:", displayText)
+    end
+end
+
+local function scan()
+    local plots = Workspace:FindFirstChild("Plots")
+    if not plots then return end
+
+    local count = 0
+
+    for i = 1, 6 do
+        local plot = plots:FindFirstChild(tostring(i))
+        if not plot then continue end
+
+        local builds = plot:FindFirstChild("Builds")
+        if builds then
+            for _, build in ipairs(builds:GetChildren()) do
+                if build:IsA("Model") and matchesTarget(build.Name) then
+                    highlightModel(build)
+                    count += 1
+                end
+            end
+        end
+
+        -- Fallback deep scan
+        for _, obj in ipairs(plot:GetDescendants()) do
+            if obj:IsA("Model") and matchesTarget(obj.Name) then
+                highlightModel(obj)
+                count += 1
+            end
+        end
+    end
+
+    -- Optional: print summary every scan (comment out if too spammy)
+    -- if count > 0 then
+    --     print("Currently tracking " .. count .. " brainrot(s) with prompt spam")
+    -- end
+end
+
+print("Brainrot ESP + Mutation + PROMPT SPAM started - Plots 1-6")
+scan()
+
+-- Re-scan periodically
+local scanConn = RunService.Heartbeat:Connect(function()
+    if tick() % 1.5 < 0.12 then
+        scan()
+    end
+end)
+
+-- Cleanup when character respawns/leaves
+LocalPlayer.CharacterRemoving:Connect(function()
+    scanConn:Disconnect()
+    for _, item in ipairs(allHighlights) do
+        pcall(function() item:Destroy() end)
+    end
+    for _, conn in pairs(spamConnections) do
+        pcall(function() conn:Disconnect() end)
+    end
+    highlighted = {}
+    allHighlights = {}
+    spamConnections = {}
+    print("ESP + spam cleaned up")
+end)
+
+print("Watching for brainrots. When found → ESP + mutation color + proximity prompt spam")-- Brainrot ESP - Scans ONLY workspace.Plots 1-6
 -- Original targets + mutation scanning on Builds → ROOT → PetNameTag.Type.Text
 
 local Workspace = game:GetService("Workspace")
