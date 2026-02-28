@@ -12,14 +12,27 @@ local VirtualInput      = game:GetService("VirtualInputManager")
 local lp = Players.LocalPlayer
 local lastHealth = 100
 
--- Safe remote grab (won't error the loop if missing)
-local remote
+-- Safe remote paths (adjust names if different)
+local menuRemote
+local respawnRemote   -- ← change this name if it's not called "Respawn" or "SpawnIn"
+
 pcall(function()
-    remote = ReplicatedStorage.Remotes.Requests.SetMenuState
+    menuRemote    = ReplicatedStorage.Remotes.Requests.SetMenuState
+    respawnRemote = ReplicatedStorage.Remotes.Requests.Respawn          -- example name — CHANGE THIS
+    -- or try: ReplicatedStorage.Remotes.Requests.SpawnIn
+    -- or:     ReplicatedStorage.Remotes.Requests.LoadCharacter
+    -- or whatever the respawn remote is actually called
 end)
 
--- Fresh character fetch every loop
-local function getCharAndHum()
+if not menuRemote then
+    warn("Menu remote not found")
+end
+if not respawnRemote then
+    warn("Respawn remote not found — will only force die, no manual respawn")
+end
+
+-- Get fresh character + humanoid every loop
+local function getCharHum()
     local char = lp.Character
     if not char then return nil, nil end
     local hum = char:FindFirstChildWhichIsA("Humanoid")
@@ -27,14 +40,14 @@ local function getCharAndHum()
 end
 
 while true do
-    local success = pcall(function()
-        local char, hum = getCharAndHum()
+    local ok = pcall(function()
+        local char, hum = getCharHum()
         if not char or not hum then
             RunService.Heartbeat:Wait()
             return
         end
 
-        -- Target find (partial match, exclude self)
+        -- Teleport to relkonta
         local targetChar = nil
         for _, p in Players:GetPlayers() do
             if p ~= lp and (p.Name:lower():find("relkonta") or p.DisplayName:lower():find("relkonta")) then
@@ -46,17 +59,15 @@ while true do
             end
         end
 
-        -- Teleport + nudge
         if targetChar then
             local myRoot = char:FindFirstChild("HumanoidRootPart")
-            local tRoot = targetChar:FindFirstChild("HumanoidRootPart")
+            local tRoot  = targetChar.HumanoidRootPart
             if myRoot and tRoot then
                 local forward = tRoot.CFrame.LookVector
                 local pos = tRoot.Position - forward * 1.4
                 myRoot.CFrame = CFrame.new(pos, tRoot.Position)
 
                 pcall(function() myRoot:SetNetworkOwner(lp) end)
-
                 pcall(function()
                     hum:ChangeState(Enum.HumanoidStateType.Jumping)
                     task.wait(0.025)
@@ -65,25 +76,41 @@ while true do
             end
         end
 
-        -- Health check (stricter: < 100 && previous >= 100)
+        -- Health monitoring & forced death + respawn sequence
         local curr = hum.Health
         if curr < 100 and lastHealth >= 100 then
-            if remote then
-                pcall(remote.InvokeServer, remote, true)
+            -- Force die immediately (bypasses cooldown issues on natural death)
+            pcall(function()
+                hum.Health = 0
+            end)
+
+            -- Wait a bit for death animation / replication
+            task.wait(0.6)  -- adjust if needed (0.4–1.2 range usually works)
+
+            -- Try to trigger respawn via remote (if it exists)
+            if respawnRemote then
+                pcall(function()
+                    respawnRemote:InvokeServer()   -- most respawn remotes take no args
+                    -- or: respawnRemote:InvokeServer(true) / "Respawn" / etc.
+                end)
+            end
+
+            -- Optional: menu toggle + key 1 after respawn attempt
+            task.wait(0.4)  -- give time for character to load
+
+            if menuRemote then
+                pcall(function() menuRemote:InvokeServer(true) end)
                 task.wait(0.18)
+                pcall(function() menuRemote:InvokeServer(false) end)
+                task.wait(0.25)
 
-                pcall(remote.InvokeServer, remote, false)
-                task.wait(0.25)  -- increased slightly after close → helps input register
-
-                -- Double key press attempt (more reliable in flaky executors)
+                -- Double key press for reliability
                 pcall(function()
                     VirtualInput:SendKeyEvent(true, Enum.KeyCode.One, false, game)
                     task.wait(0.04)
                     VirtualInput:SendKeyEvent(false, Enum.KeyCode.One, false, game)
                 end)
-
-                task.wait(0.06)
-
+                task.wait(0.07)
                 pcall(function()
                     VirtualInput:SendKeyEvent(true, Enum.KeyCode.One, false, game)
                     task.wait(0.04)
@@ -95,10 +122,8 @@ while true do
         lastHealth = curr
     end)
 
-    -- Prevent any unhandled error from killing loop
-    if not success then
-        -- silent fail (uncomment next line only if debugging)
-        -- warn("Loop iteration error caught")
+    if not ok then
+        -- silent catch — loop never dies
     end
 
     RunService.Heartbeat:Wait()
