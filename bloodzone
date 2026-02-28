@@ -1,4 +1,4 @@
--- Clean up common inserted script
+-- Clean up common inserted script (optional but kept as requested)
 pcall(function()
     if workspace:FindFirstChild("Script") then
         workspace.Script:Destroy()
@@ -9,36 +9,38 @@ end)
 local Players           = game:GetService("Players")
 local RunService        = game:GetService("RunService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local VirtualInput      = game:GetService("VirtualInputManager")  -- must be supported by executor
+local VirtualInput      = game:GetService("VirtualInputManager")
 
 local lp        = Players.LocalPlayer
 local character = lp.Character or lp.CharacterAdded:Wait()
 local humanoid  = character:WaitForChild("Humanoid")
 
+-- Respawn handler
 lp.CharacterAdded:Connect(function(newChar)
     character = newChar
     humanoid  = newChar:WaitForChild("Humanoid")
 end)
 
-local targetPattern = "relkonta"
+local targetPattern = "relkonta"  -- partial match
 
+-- Remote path (safe wait)
 local remote
 pcall(function()
-    remote = ReplicatedStorage:WaitForChild("Remotes", 8)
-                       :WaitForChild("Requests", 8)
-                       :WaitForChild("SetMenuState", 5)
+    remote = ReplicatedStorage:WaitForChild("Remotes", 10)
+                       :WaitForChild("Requests", 10)
+                       :WaitForChild("SetMenuState", 8)
 end)
 
 if not remote then
-    warn("SetMenuState remote not found — menu actions skipped")
+    warn("SetMenuState remote NOT found — menu open/close will be skipped")
 end
 
 local lastHealth = 100
 
-print("Loop active | Target: *" .. targetPattern .. "* | Pressing KEY 1 after menu close")
+print("FULL SCRIPT RUNNING | Target: *" .. targetPattern .. "* | KEY 1 press after menu close")
 
 while true do
-    -- Find target (partial match on name or displayname)
+    -- Find target (name or displayname partial match)
     local targetChar = nil
     for _, p in ipairs(Players:GetPlayers()) do
         local n = p.Name:lower()
@@ -51,39 +53,44 @@ while true do
         end
     end
 
-    -- Teleport 1–1.5 stud in front, facing them
+    -- Teleport if found
     if targetChar and character and character:FindFirstChild("HumanoidRootPart") then
         local myHRP   = character.HumanoidRootPart
         local targHRP = targetChar.HumanoidRootPart
+        
         local forward = targHRP.CFrame.LookVector
         local pos     = targHRP.Position - forward * 1.4
         myHRP.CFrame  = CFrame.new(pos, targHRP.Position)
     end
 
-    -- Health drop → menu open → close → wait → press 1
+    -- Health check
     local currHealth = humanoid and humanoid.Health or 100
 
     if currHealth < 100 and lastHealth >= 100 then
+        print("HEALTH DROPPED BELOW 100 → starting sequence")
+
         if remote then
-            pcall(function() remote:InvokeServer(true)  end)
+            pcall(function() remote:InvokeServer(true) end)
+            print(" → Opened menu (true)")
             task.wait(0.2)
+
             pcall(function() remote:InvokeServer(false) end)
+            print(" → Closed menu (false)")
+            task.wait(0.2)
 
-            task.wait(2)
-
-            -- Simulate press KEY 1 (down + up)
+            -- Press KEY 1
             pcall(function()
                 VirtualInput:SendKeyEvent(true,  Enum.KeyCode.One, false, game)
-                task.wait(0.2)  -- tiny hold time
+                task.wait(0.04)  -- short hold
                 VirtualInput:SendKeyEvent(false, Enum.KeyCode.One, false, game)
-                print("Simulated press of KEY 1")
+                print(" → PRESSED & RELEASED KEY 1")
             end)
         else
-            warn("Health dropped but remote missing")
+            warn("Remote missing → skipping menu & key press")
         end
     end
 
     lastHealth = currHealth
 
-    RunService.Heartbeat:Wait()
+    RunService.Heartbeat:Wait()  -- ~60 times/sec, smooth
 end
