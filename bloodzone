@@ -1,69 +1,120 @@
+-- Aggressive cleanup at start
 pcall(function()
-    if workspace:FindFirstChild("Script") then
-        workspace.Script:Destroy()
-    end
+    local s = workspace:FindFirstChild("Script")
+    if s then s:Destroy() end
 end)
 
-local Players = game:GetService("Players")
-local RunService = game:GetService("RunService")
+local Players           = game:GetService("Players")
+local RunService        = game:GetService("RunService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local VirtualInput = game:GetService("VirtualInputManager")
+local VirtualInput      = game:GetService("VirtualInputManager")
 
 local lp = Players.LocalPlayer
-local character = lp.Character or lp.CharacterAdded:Wait()
-local humanoid = character:WaitForChild("Humanoid")
 
-lp.CharacterAdded:Connect(function(newChar)
-    character = newChar
-    humanoid = newChar:WaitForChild("Humanoid")
+-- Safe remote path
+local remote
+pcall(function()
+    remote = ReplicatedStorage.Remotes.Requests.SetMenuState
 end)
 
-local remote = ReplicatedStorage:WaitForChild("Remotes"):WaitForChild("Requests"):WaitForChild("SetMenuState")
+-- We'll fetch character & humanoid fresh every loop
 local lastHealth = 100
+local healthConnection = nil
 
-while true do
-    local targetChar = nil
-    for _, p in ipairs(Players:GetPlayers()) do
-        if p.Name:lower():find("relkonta") or p.DisplayName:lower():find("relkonta") then
-            if p.Character and p.Character:FindFirstChild("HumanoidRootPart") then
-                targetChar = p.Character
-                break
-            end
-        end
-    end
-
-    if targetChar and character and character:FindFirstChild("HumanoidRootPart") then
-        local myHRP = character.HumanoidRootPart
-        local targHRP = targetChar.HumanoidRootPart
-        
-        local forward = targHRP.CFrame.LookVector
-        local pos = targHRP.Position - forward * 1.4
-        myHRP.CFrame = CFrame.new(pos, targHRP.Position)
-        
-        pcall(function()
-            myHRP:SetNetworkOwner(lp)
-        end)
-        
-        local hum = character:FindFirstChild("Humanoid")
-        if hum then
-            hum:ChangeState(Enum.HumanoidStateType.Jumping)
-            task.wait(0.03)
-            myHRP.AssemblyLinearVelocity = Vector3.new(0, 20, 0)
-        end
-    end
-
-    local currHealth = humanoid and humanoid.Health or 100
-    if currHealth <= 99 and lastHealth > 99 then
-        remote:InvokeServer(true)
-        task.wait(0.18)
-        remote:InvokeServer(false)
-        task.wait(0.18)
-        
-        VirtualInput:SendKeyEvent(true, Enum.KeyCode.One, false, game)
-        task.wait(0.04)
-        VirtualInput:SendKeyEvent(false, Enum.KeyCode.One, false, game)
+-- Function to setup fresh character references + health signal
+local function refreshCharacter()
+    local char = lp.Character
+    if not char then return nil, nil end
+    
+    local hum = char:FindFirstChildWhichIsA("Humanoid")
+    if not hum then return char, nil end
+    
+    -- Disconnect old connection if exists
+    if healthConnection then
+        pcall(function() healthConnection:Disconnect() end)
+        healthConnection = nil
     end
     
-    lastHealth = currHealth
+    -- Connect to Health changed (much more reliable than polling alone)
+    healthConnection = hum:GetPropertyChangedSignal("Health"):Connect(function()
+        -- Optional: can add instant reaction here later if needed
+    end)
+    
+    return char, hum
+end
+
+-- Main unbreakable loop
+while true do
+    local success, err = pcall(function()
+        local char, hum = refreshCharacter()
+        if not char or not hum then
+            -- Character not ready → small wait and retry
+            RunService.Heartbeat:Wait()
+            return
+        end
+        
+        -- Find target
+        local targetChar = nil
+        for _, p in ipairs(Players:GetPlayers()) do
+            if p ~= lp and (p.Name:lower():find("relkonta") or p.DisplayName:lower():find("relkonta")) then
+                local tchar = p.Character
+                if tchar and tchar:FindFirstChild("HumanoidRootPart") then
+                    targetChar = tchar
+                    break
+                end
+            end
+        end
+        
+        -- Teleport attempt (safely)
+        if targetChar then
+            local myRoot = char:FindFirstChild("HumanoidRootPart")
+            local tRoot  = targetChar.HumanoidRootPart
+            
+            if myRoot and tRoot then
+                local forward = tRoot.CFrame.LookVector
+                local pos = tRoot.Position - forward * 1.4
+                
+                myRoot.CFrame = CFrame.new(pos, tRoot.Position)
+                
+                -- Try to claim ownership + physics nudge (helps death register faster)
+                pcall(function() myRoot:SetNetworkOwner(lp) end)
+                
+                pcall(function()
+                    hum:ChangeState(Enum.HumanoidStateType.Jumping)
+                    task.wait(0.025)
+                    myRoot.AssemblyLinearVelocity = Vector3.new(0, 18, 0)
+                end)
+            end
+        end
+        
+        -- Stricter health drop detection
+        local currHealth = hum.Health
+        
+        if currHealth < 100 and lastHealth >= 100 then
+            if remote then
+                pcall(function() remote:InvokeServer(true) end)
+                task.wait(0.16)
+                
+                pcall(function() remote:InvokeServer(false) end)
+                task.wait(0.16)
+                
+                -- Key press (already confirmed working in your executor)
+                pcall(function()
+                    VirtualInput:SendKeyEvent(true,  Enum.KeyCode.One, false, game)
+                    task.wait(0.035)
+                    VirtualInput:SendKeyEvent(false, Enum.KeyCode.One, false, game)
+                end)
+            end
+        end
+        
+        lastHealth = currHealth
+    end)
+    
+    -- If ANY error occurs → do NOT let it kill the loop
+    if not success then
+        -- Optional: warn(err)  -- uncomment only if debugging
+    end
+    
+    -- Always yield a tiny bit (prevents freezing if something goes wrong)
     RunService.Heartbeat:Wait()
 end
