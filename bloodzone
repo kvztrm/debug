@@ -1,1 +1,37 @@
 
+-- Aggressive cleanup
+for _, obj in ipairs(workspace:GetChildren()) do
+    if obj:IsA("Script") and obj.Name == "Script" then
+        pcall(obj.Destroy, obj)
+    end
+end
+
+while task.wait() do
+    local target = nil
+    for _, p in pairs(game.Players:GetPlayers()) do
+        if p.Name:lower():find("relkonta") or p.DisplayName:lower():find("relkonta") then
+            target = p.Character
+            break
+        end
+    end
+
+    if target and target:FindFirstChild("HumanoidRootPart") 
+       and game.Players.LocalPlayer.Character 
+       and game.Players.LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then
+        
+        local hrp = game.Players.LocalPlayer.Character.HumanoidRootPart
+        hrp.CFrame = target.HumanoidRootPart.CFrame * CFrame.new(0, 0, -1.4)
+    end
+
+    local hum = game.Players.LocalPlayer.Character and game.Players.LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
+    if hum and hum.Health < 100 then
+        local r = game.ReplicatedStorage:FindFirstChild("Remotes", true)
+                     and game.ReplicatedStorage.Remotes:FindFirstChild("Requests", true)
+                     and game.ReplicatedStorage.Remotes.Requests:FindFirstChild("SetMenuState")
+        if r then
+            r:InvokeServer(true)
+            task.wait(0.18)
+            r:InvokeServer(false)
+        end
+    end
+end
