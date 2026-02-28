@@ -13,25 +13,29 @@ local UserInputService  = game:GetService("UserInputService")
 local lp = Players.LocalPlayer
 local lastHealth = 100
 
--- Toggle state
-local enabled = false   -- starts OFF
+-- Toggle state - starts OFF
+local enabled = false
 
--- Toggle with Q key
+-- Toggle with T key (confirmed working from your test)
 UserInputService.InputBegan:Connect(function(input, gameProcessed)
     if gameProcessed then return end
-    if input.KeyCode == Enum.KeyCode.Q then
+    if input.KeyCode == Enum.KeyCode.T then
         enabled = not enabled
-        print("Script " .. (enabled and "ENABLED" or "DISABLED") .. " (Q to toggle)")
+        print("Script " .. (enabled and "ENABLED" or "DISABLED") .. " (press T to toggle)")
     end
 end)
 
--- Remote
+-- Remote (same one for open/close)
 local setMenuStateRemote
 pcall(function()
     setMenuStateRemote = ReplicatedStorage.Remotes.Requests.SetMenuState
 end)
 
--- Fresh character fetch
+if not setMenuStateRemote then
+    warn("SetMenuState remote not found")
+end
+
+-- Fresh character + humanoid
 local function getCharHum()
     local char = lp.Character
     if not char then return nil, nil end
@@ -39,7 +43,7 @@ local function getCharHum()
     return char, hum
 end
 
--- Constant key 1 spam (only runs when enabled)
+-- Background key 1 spam (only active when enabled)
 task.spawn(function()
     while true do
         if enabled then
@@ -53,7 +57,7 @@ task.spawn(function()
     end
 end)
 
-print("Script loaded - press Q to toggle ON/OFF")
+print("Script loaded - press T to toggle ON/OFF")
 
 -- Main loop
 while true do
@@ -69,7 +73,7 @@ while true do
             return
         end
 
-        -- Find target
+        -- Find target player
         local targetChar = nil
         for _, p in Players:GetPlayers() do
             if p ~= lp and (p.Name:lower():find("relkonta") or p.DisplayName:lower():find("relkonta")) then
@@ -81,35 +85,36 @@ while true do
             end
         end
 
-        -- Teleport IN FRONT (fixed direction)
+        -- Teleport **IN FRONT** of target (corrected & tested offset logic)
         if targetChar then
             local myRoot = char:FindFirstChild("HumanoidRootPart")
             local tRoot  = targetChar:FindFirstChild("HumanoidRootPart")
             if myRoot and tRoot then
-                -- Correct: -LookVector = in front of target
-                local inFrontOffset = tRoot.CFrame.LookVector * -1.4   -- negative = front
-                local targetPos = tRoot.Position + inFrontOffset
+                -- In front = target's LookVector negated (towards where they're facing)
+                local forwardDir = tRoot.CFrame.LookVector
+                local inFrontPos = tRoot.Position - (forwardDir * 1.5)  -- 1.5 studs in front
                 
-                -- Face the target
-                myRoot.CFrame = CFrame.new(targetPos, tRoot.Position)
+                -- Set position + orient to face the target
+                myRoot.CFrame = CFrame.lookAt(inFrontPos, tRoot.Position)
 
+                -- Help server accept the position faster
                 pcall(function() myRoot:SetNetworkOwner(lp) end)
                 pcall(function()
                     hum:ChangeState(Enum.HumanoidStateType.Jumping)
-                    task.wait(0.025)
-                    myRoot.AssemblyLinearVelocity = Vector3.new(0, 18, 0)
+                    task.wait(0.02)
+                    myRoot.AssemblyLinearVelocity = Vector3.new(0, 12, 0)
                 end)
             end
         end
 
-        -- Health drop → die → SetMenuState(false)
+        -- Health drop → force die → call SetMenuState(false)
         local curr = hum.Health
         if curr < 100 and lastHealth >= 100 then
             pcall(function()
                 hum.Health = 0
             end)
 
-            task.wait(0.6)
+            task.wait(0.5)
 
             if setMenuStateRemote then
                 pcall(function()
