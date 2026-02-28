@@ -6,7 +6,7 @@ local RunService = game:GetService("RunService")
 
 -- Exact names — must match the model's .Name property exactly
 local targets = {
-    "La grande Combinasion",
+    "La grande Combanision",
     "KarKirKirKurKur",
     "Octamasu Noddledudu",
     "Rhino Toasterino",
@@ -14,7 +14,7 @@ local targets = {
     "Alessio",
     "Chillin Chili",
     "Strawberry Elephant",
-    "Torrtuginni Dragonfruitinni"
+    "Torrtuginni Dragonfrutinni"
 }
 
 local highlighted = {}     -- prevents duplicate highlights
