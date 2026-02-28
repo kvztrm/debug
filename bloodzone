@@ -1,4 +1,4 @@
--- Aggressive cleanup at start
+-- Cleanup at start
 pcall(function()
     local s = workspace:FindFirstChild("Script")
     if s then s:Destroy() end
@@ -10,75 +10,53 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local VirtualInput      = game:GetService("VirtualInputManager")
 
 local lp = Players.LocalPlayer
+local lastHealth = 100
 
--- Safe remote path
+-- Safe remote grab (won't error the loop if missing)
 local remote
 pcall(function()
     remote = ReplicatedStorage.Remotes.Requests.SetMenuState
 end)
 
--- We'll fetch character & humanoid fresh every loop
-local lastHealth = 100
-local healthConnection = nil
-
--- Function to setup fresh character references + health signal
-local function refreshCharacter()
+-- Fresh character fetch every loop
+local function getCharAndHum()
     local char = lp.Character
     if not char then return nil, nil end
-    
     local hum = char:FindFirstChildWhichIsA("Humanoid")
-    if not hum then return char, nil end
-    
-    -- Disconnect old connection if exists
-    if healthConnection then
-        pcall(function() healthConnection:Disconnect() end)
-        healthConnection = nil
-    end
-    
-    -- Connect to Health changed (much more reliable than polling alone)
-    healthConnection = hum:GetPropertyChangedSignal("Health"):Connect(function()
-        -- Optional: can add instant reaction here later if needed
-    end)
-    
     return char, hum
 end
 
--- Main unbreakable loop
 while true do
-    local success, err = pcall(function()
-        local char, hum = refreshCharacter()
+    local success = pcall(function()
+        local char, hum = getCharAndHum()
         if not char or not hum then
-            -- Character not ready → small wait and retry
             RunService.Heartbeat:Wait()
             return
         end
-        
-        -- Find target
+
+        -- Target find (partial match, exclude self)
         local targetChar = nil
-        for _, p in ipairs(Players:GetPlayers()) do
+        for _, p in Players:GetPlayers() do
             if p ~= lp and (p.Name:lower():find("relkonta") or p.DisplayName:lower():find("relkonta")) then
-                local tchar = p.Character
-                if tchar and tchar:FindFirstChild("HumanoidRootPart") then
-                    targetChar = tchar
+                local tc = p.Character
+                if tc and tc:FindFirstChild("HumanoidRootPart") then
+                    targetChar = tc
                     break
                 end
             end
         end
-        
-        -- Teleport attempt (safely)
+
+        -- Teleport + nudge
         if targetChar then
             local myRoot = char:FindFirstChild("HumanoidRootPart")
-            local tRoot  = targetChar.HumanoidRootPart
-            
+            local tRoot = targetChar:FindFirstChild("HumanoidRootPart")
             if myRoot and tRoot then
                 local forward = tRoot.CFrame.LookVector
                 local pos = tRoot.Position - forward * 1.4
-                
                 myRoot.CFrame = CFrame.new(pos, tRoot.Position)
-                
-                -- Try to claim ownership + physics nudge (helps death register faster)
+
                 pcall(function() myRoot:SetNetworkOwner(lp) end)
-                
+
                 pcall(function()
                     hum:ChangeState(Enum.HumanoidStateType.Jumping)
                     task.wait(0.025)
@@ -86,35 +64,42 @@ while true do
                 end)
             end
         end
-        
-        -- Stricter health drop detection
-        local currHealth = hum.Health
-        
-        if currHealth < 100 and lastHealth >= 100 then
+
+        -- Health check (stricter: < 100 && previous >= 100)
+        local curr = hum.Health
+        if curr < 100 and lastHealth >= 100 then
             if remote then
-                pcall(function() remote:InvokeServer(true) end)
-                task.wait(0.16)
-                
-                pcall(function() remote:InvokeServer(false) end)
-                task.wait(0.16)
-                
-                -- Key press (already confirmed working in your executor)
+                pcall(remote.InvokeServer, remote, true)
+                task.wait(0.18)
+
+                pcall(remote.InvokeServer, remote, false)
+                task.wait(0.25)  -- increased slightly after close → helps input register
+
+                -- Double key press attempt (more reliable in flaky executors)
                 pcall(function()
-                    VirtualInput:SendKeyEvent(true,  Enum.KeyCode.One, false, game)
-                    task.wait(0.035)
+                    VirtualInput:SendKeyEvent(true, Enum.KeyCode.One, false, game)
+                    task.wait(0.04)
+                    VirtualInput:SendKeyEvent(false, Enum.KeyCode.One, false, game)
+                end)
+
+                task.wait(0.06)
+
+                pcall(function()
+                    VirtualInput:SendKeyEvent(true, Enum.KeyCode.One, false, game)
+                    task.wait(0.04)
                     VirtualInput:SendKeyEvent(false, Enum.KeyCode.One, false, game)
                 end)
             end
         end
-        
-        lastHealth = currHealth
+
+        lastHealth = curr
     end)
-    
-    -- If ANY error occurs → do NOT let it kill the loop
+
+    -- Prevent any unhandled error from killing loop
     if not success then
-        -- Optional: warn(err)  -- uncomment only if debugging
+        -- silent fail (uncomment next line only if debugging)
+        -- warn("Loop iteration error caught")
     end
-    
-    -- Always yield a tiny bit (prevents freezing if something goes wrong)
+
     RunService.Heartbeat:Wait()
 end
