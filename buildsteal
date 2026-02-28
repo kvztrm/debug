@@ -1,146 +1,10 @@
--- White ESP - Highlights ALL matching brainrot models in Plots 1-6
--- See-through walls, pulsing white highlight + floating name tag
+-- Brainrot ESP - Scans ONLY workspace.Plots 1-6
+-- Your exact original list (no changes) + new ones added at the end
 
 local Workspace = game:GetService("Workspace")
 local RunService = game:GetService("RunService")
 
--- Your target brainrot names (exact or close matches)
-local targets = {
-    "La Grande Combinasion",
-    "KarKirKirKurKur",
-    "Octamasu Noddledudu",
-    "Rhino Toasterino",
-    "Bulbito Bandito Traktorito",
-    "Alessio",
-    "Chillin Chili",
-    "Strawberry Elephant",
-    "Torrtuginni Dragonfruitinni"
-}
-
-local highlighted = {}
-local allHighlights = {}
-
-local function matchesTarget(name)
-    local lower = name:lower()
-    for _, t in ipairs(targets) do
-        if lower:find(t:lower()) then
-            return true
-        end
-    end
-    return false
-end
-
-local function highlightModel(model)
-    if highlighted[model] then return end
-    highlighted[model] = true
-
-    -- White see-through highlight
-    local hl = Instance.new("Highlight")
-    hl.Name = "BrainrotESP"
-    hl.FillColor = Color3.new(1, 1, 1)
-    hl.OutlineColor = Color3.new(1, 1, 1)
-    hl.FillTransparency = 0.4
-    hl.OutlineTransparency = 0
-    hl.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
-    hl.Parent = model
-
-    table.insert(allHighlights, hl)
-
-    -- Floating name tag
-    local root = model.PrimaryPart or model:FindFirstChildWhichIsA("BasePart", true)
-    if root then
-        local bb = Instance.new("BillboardGui")
-        bb.Name = "NameTag"
-        bb.Adornee = root
-        bb.Size = UDim2.new(0, 260, 0, 60)
-        bb.StudsOffset = Vector3.new(0, 4, 0)
-        bb.AlwaysOnTop = true
-        bb.Parent = root
-
-        local txt = Instance.new("TextLabel")
-        txt.Size = UDim2.new(1, 0, 1, 0)
-        txt.BackgroundTransparency = 1
-        txt.Text = model.Name
-        txt.TextColor3 = Color3.new(1, 1, 1)
-        txt.TextStrokeTransparency = 0
-        txt.TextStrokeColor3 = Color3.new(0, 0, 0)
-        txt.TextScaled = true
-        txt.Font = Enum.Font.GothamBold
-        txt.Parent = bb
-
-        table.insert(allHighlights, bb)
-    end
-
-    -- Gentle pulse
-    task.spawn(function()
-        while hl.Parent do
-            hl.FillTransparency = 0.4
-            task.wait(0.8)
-            hl.FillTransparency = 0.75
-            task.wait(0.8)
-        end
-    end)
-
-    print("Highlighted:", model.Name, "→", model:GetFullName())
-end
-
-local function scan()
-    local plots = Workspace:FindFirstChild("Plots")
-    if not plots then
-        print("→ Plots folder not found")
-        return
-    end
-
-    local count = 0
-
-    for i = 1, 6 do
-        local plot = plots:FindFirstChild(tostring(i))
-        if not plot then continue end
-
-        for _, obj in ipairs(plot:GetDescendants()) do
-            if obj:IsA("Model") and matchesTarget(obj.Name) then
-                highlightModel(obj)
-                count = count + 1
-            end
-        end
-    end
-
-    if count == 0 then
-        print("→ No matching brainrot models found right now")
-    else
-        print("→ Found and highlighted", count, "brainrot model(s)")
-    end
-end
-
-print("Starting brainrot white ESP...")
-scan()
-
--- Re-scan every ~3.5 seconds
-local connection = RunService.Heartbeat:Connect(function()
-    if tick() % 3.5 < 0.05 then
-        scan()
-    end
-end)
-
--- Cleanup when character is removed
-game.Players.LocalPlayer.CharacterRemoving:Connect(function()
-    connection:Disconnect()
-    for _, item in ipairs(allHighlights) do
-        pcall(function() item:Destroy() end)
-    end
-    print("ESP cleaned up")
-end)
-
-print("Active. Highlighting these brainrots (partial match):")
-for _, name in ipairs(targets) do
-    print("  • " .. name)
-end-- Brainrot ESP - Scans ONLY workspace.Plots 1-6
--- Your exact original list (no changes)
-
-local Workspace = game:GetService("Workspace")
-local RunService = game:GetService("RunService")
-
--- Your exact list (unchanged)
+-- Your exact original list (unchanged) + new brainrots added below
 local targets = {
     "La grande Combanision",
     "KarKirKirKurKur",
@@ -151,6 +15,7 @@ local targets = {
     "Chillin Chili",
     "Strawberry Elephant",
     "Torrtuginni Dragonfrutinni",
+    -- New brainrots added here
     "67",
     "Agarrini la Palini",
     "Ketupat Kepot",
@@ -180,7 +45,6 @@ end
 local function highlightModel(model)
     if highlighted[model] then return end
     highlighted[model] = true
-
     local hl = Instance.new("Highlight")
     hl.FillColor = Color3.new(1, 1, 1)
     hl.OutlineColor = Color3.new(1, 1, 1)
@@ -188,9 +52,7 @@ local function highlightModel(model)
     hl.OutlineTransparency = 0
     hl.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
     hl.Parent = model
-
     table.insert(allHighlights, hl)
-
     local root = model.PrimaryPart or model:FindFirstChildWhichIsA("BasePart", true)
     if root then
         local bb = Instance.new("BillboardGui")
@@ -199,7 +61,6 @@ local function highlightModel(model)
         bb.StudsOffset = Vector3.new(0, 4, 0)
         bb.AlwaysOnTop = true
         bb.Parent = root
-
         local txt = Instance.new("TextLabel")
         txt.Size = UDim2.new(1, 0, 1, 0)
         txt.BackgroundTransparency = 1
@@ -210,10 +71,8 @@ local function highlightModel(model)
         txt.TextScaled = true
         txt.Font = Enum.Font.GothamBold
         txt.Parent = bb
-
         table.insert(allHighlights, bb)
     end
-
     task.spawn(function()
         while hl.Parent do
             hl.FillTransparency = 0.4
@@ -222,7 +81,6 @@ local function highlightModel(model)
             task.wait(0.8)
         end
     end)
-
     print("Highlighted:", model.Name, "→", model:GetFullName())
 end
 
@@ -232,20 +90,15 @@ local function scan()
         print("→ No 'Plots' folder found in workspace")
         return
     end
-
     local count = 0
-
     print("Scanning workspace.Plots 1–6...")
-
     for i = 1, 6 do
         local plot = plotsFolder:FindFirstChild(tostring(i))
         if not plot then
-            print("  Plot " .. i .. ": not found")
+            print(" Plot " .. i .. ": not found")
             continue
         end
-
-        print("  Checking Plot " .. i .. "...")
-
+        print(" Checking Plot " .. i .. "...")
         for _, obj in ipairs(plot:GetDescendants()) do
             if obj:IsA("Model") then
                 if matchesTarget(obj.Name) then
@@ -255,13 +108,12 @@ local function scan()
             end
         end
     end
-
     print("Scan complete. Found & highlighted " .. count .. " brainrot(s)")
     if count == 0 then
         print("→ No matches. Possible reasons:")
-        print("   • Names in game are different (prefixes, spaces, capitalization)")
-        print("   • Brainrots not spawned/owned in this server")
-        print("   • Models are nested deeper or hidden")
+        print(" • Names in game are different (prefixes, spaces, capitalization)")
+        print(" • Brainrots not spawned/owned in this server")
+        print(" • Models are nested deeper or hidden")
     end
 end
 
@@ -270,7 +122,7 @@ scan()
 
 -- Re-scan every 5 seconds
 local connection = RunService.Heartbeat:Connect(function()
-    if tick() % 5 < 0.1 then
+    if tick() % 1.5 < 0.1 then
         scan()
     end
 end)
@@ -285,5 +137,5 @@ end)
 
 print("Active. Watching for these brainrots (partial match):")
 for _, name in ipairs(targets) do
-    print("  • " .. name)
+    print(" • " .. name)
 end
