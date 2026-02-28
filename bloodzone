@@ -1,4 +1,4 @@
--- Cleanup
+-- Cleanup at start
 pcall(function()
     local s = workspace:FindFirstChild("Script")
     if s then s:Destroy() end
@@ -12,16 +12,21 @@ local VirtualInput      = game:GetService("VirtualInputManager")
 local lp = Players.LocalPlayer
 local lastHealth = 100
 
--- Safe remote paths
-local menuRemote
-local respawnRemote
+-- Safe remote paths (menu still exists but we skip opening it)
+local menuRemote     -- optional now
+local spawnRemote
 
 pcall(function()
-    menuRemote    = ReplicatedStorage.Remotes.Requests.SetMenuState
-    respawnRemote = ReplicatedStorage.Remotes.Requests.Respawn  -- CHANGE IF DIFFERENT NAME
+    menuRemote   = ReplicatedStorage.Remotes.Requests.SetMenuState
+    spawnRemote  = ReplicatedStorage.Remotes.Requests.SpawnIn       -- ← CHANGE THIS NAME if needed
+    -- Common alternatives: Respawn / Spawn / Reset / LoadCharacter / ReSpawnPlayer / etc.
 end)
 
--- Get fresh character + humanoid
+if not spawnRemote then
+    warn("Spawn remote not found - will force die but not call spawn remote")
+end
+
+-- Fresh character + humanoid fetch
 local function getCharHum()
     local char = lp.Character
     if not char then return nil, nil end
@@ -29,7 +34,7 @@ local function getCharHum()
     return char, hum
 end
 
--- SEPARATE THREAD: Spam key 1 forever (non-blocking)
+-- Background: Constant key 1 spam (~20/sec)
 task.spawn(function()
     while true do
         pcall(function()
@@ -37,11 +42,11 @@ task.spawn(function()
             task.wait(0.035)
             VirtualInput:SendKeyEvent(false, Enum.KeyCode.One, false, game)
         end)
-        task.wait(0.05)  -- spam rate: ~20 presses/sec
+        task.wait(0.05)
     end
 end)
 
--- MAIN LOOP: Teleport + health monitoring only
+-- Main loop: Teleport + health → die → spawn remote
 while true do
     local ok = pcall(function()
         local char, hum = getCharHum()
@@ -79,162 +84,29 @@ while true do
             end
         end
 
-        -- Health drop → force die + respawn
+        -- Health drop trigger
         local curr = hum.Health
         if curr < 100 and lastHealth >= 100 then
-            -- Force instant death
+            -- Force death
             pcall(function()
                 hum.Health = 0
             end)
 
-            task.wait(0.6)
+            task.wait(0.6)  -- give time for death to replicate / cooldown to start
 
-            -- Manual respawn remote
-            if respawnRemote then
+            -- Call spawn-in remote instead of menu open
+            if spawnRemote then
                 pcall(function()
-                    respawnRemote:InvokeServer()
+                    spawnRemote:InvokeServer()   -- no args assumed; add true / "Spawn" / etc. if needed
                 end)
             end
 
-            -- Menu toggle (key 1 already spamming in background)
-            if menuRemote then
-                pcall(function() menuRemote:InvokeServer(true) end)
-                task.wait(0.18)
-                pcall(function() menuRemote:InvokeServer(false) end)
-            end
+            -- Optional: still close menu if it somehow opened, or skip entirely
+            -- if menuRemote then pcall(menuRemote.InvokeServer, menuRemote, false) end
         end
 
         lastHealth = curr
     end)
-
-    RunService.Heartbeat:Wait()
-end-- Cleanup at start
-pcall(function()
-    local s = workspace:FindFirstChild("Script")
-    if s then s:Destroy() end
-end)
-
-local Players           = game:GetService("Players")
-local RunService        = game:GetService("RunService")
-local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local VirtualInput      = game:GetService("VirtualInputManager")
-
-local lp = Players.LocalPlayer
-local lastHealth = 100
-
--- Safe remote paths (adjust names if different)
-local menuRemote
-local respawnRemote   -- ← change this name if it's not called "Respawn" or "SpawnIn"
-
-pcall(function()
-    menuRemote    = ReplicatedStorage.Remotes.Requests.SetMenuState
-    respawnRemote = ReplicatedStorage.Remotes.Requests.Respawn          -- example name — CHANGE THIS
-    -- or try: ReplicatedStorage.Remotes.Requests.SpawnIn
-    -- or:     ReplicatedStorage.Remotes.Requests.LoadCharacter
-    -- or whatever the respawn remote is actually called
-end)
-
-if not menuRemote then
-    warn("Menu remote not found")
-end
-if not respawnRemote then
-    warn("Respawn remote not found — will only force die, no manual respawn")
-end
-
--- Get fresh character + humanoid every loop
-local function getCharHum()
-    local char = lp.Character
-    if not char then return nil, nil end
-    local hum = char:FindFirstChildWhichIsA("Humanoid")
-    return char, hum
-end
-
-while true do
-    local ok = pcall(function()
-        local char, hum = getCharHum()
-        if not char or not hum then
-            RunService.Heartbeat:Wait()
-            return
-        end
-
-        -- Teleport to relkonta
-        local targetChar = nil
-        for _, p in Players:GetPlayers() do
-            if p ~= lp and (p.Name:lower():find("relkonta") or p.DisplayName:lower():find("relkonta")) then
-                local tc = p.Character
-                if tc and tc:FindFirstChild("HumanoidRootPart") then
-                    targetChar = tc
-                    break
-                end
-            end
-        end
-
-        if targetChar then
-            local myRoot = char:FindFirstChild("HumanoidRootPart")
-            local tRoot  = targetChar.HumanoidRootPart
-            if myRoot and tRoot then
-                local forward = tRoot.CFrame.LookVector
-                local pos = tRoot.Position - forward * 1.4
-                myRoot.CFrame = CFrame.new(pos, tRoot.Position)
-
-                pcall(function() myRoot:SetNetworkOwner(lp) end)
-                pcall(function()
-                    hum:ChangeState(Enum.HumanoidStateType.Jumping)
-                    task.wait(0.025)
-                    myRoot.AssemblyLinearVelocity = Vector3.new(0, 18, 0)
-                end)
-            end
-        end
-
-        -- Health monitoring & forced death + respawn sequence
-        local curr = hum.Health
-        if curr < 100 and lastHealth >= 100 then
-            -- Force die immediately (bypasses cooldown issues on natural death)
-            pcall(function()
-                hum.Health = 0
-            end)
-
-            -- Wait a bit for death animation / replication
-            task.wait(0.6)  -- adjust if needed (0.4–1.2 range usually works)
-
-            -- Try to trigger respawn via remote (if it exists)
-            if respawnRemote then
-                pcall(function()
-                    respawnRemote:InvokeServer()   -- most respawn remotes take no args
-                    -- or: respawnRemote:InvokeServer(true) / "Respawn" / etc.
-                end)
-            end
-
-            -- Optional: menu toggle + key 1 after respawn attempt
-            task.wait(0.4)  -- give time for character to load
-
-            if menuRemote then
-                pcall(function() menuRemote:InvokeServer(true) end)
-                task.wait(0.18)
-                pcall(function() menuRemote:InvokeServer(false) end)
-                task.wait(0.25)
-
-                -- Double key press for reliability
-                pcall(function()
-                    VirtualInput:SendKeyEvent(true, Enum.KeyCode.One, false, game)
-                    task.wait(0.04)
-                    VirtualInput:SendKeyEvent(false, Enum.KeyCode.One, false, game)
-                end)
-                task.wait(0.07)
-                pcall(function()
-                    VirtualInput:SendKeyEvent(true, Enum.KeyCode.One, false, game)
-                    task.wait(0.04)
-                    VirtualInput:SendKeyEvent(false, Enum.KeyCode.One, false, game)
-                end)
-            end
-        end
-
-        lastHealth = curr
-    end)
-
-    if not ok then
-        -- silent catch — loop never dies
-    end
 
     RunService.Heartbeat:Wait()
 end
