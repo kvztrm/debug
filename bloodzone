@@ -1,51 +1,30 @@
--- Clean up common inserted script (optional but kept as requested)
 pcall(function()
     if workspace:FindFirstChild("Script") then
         workspace.Script:Destroy()
-        print("Deleted workspace.Script")
     end
 end)
 
-local Players           = game:GetService("Players")
-local RunService        = game:GetService("RunService")
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local VirtualInput      = game:GetService("VirtualInputManager")
+local VirtualInput = game:GetService("VirtualInputManager")
 
-local lp        = Players.LocalPlayer
+local lp = Players.LocalPlayer
 local character = lp.Character or lp.CharacterAdded:Wait()
-local humanoid  = character:WaitForChild("Humanoid")
+local humanoid = character:WaitForChild("Humanoid")
 
--- Respawn handler
 lp.CharacterAdded:Connect(function(newChar)
     character = newChar
-    humanoid  = newChar:WaitForChild("Humanoid")
+    humanoid = newChar:WaitForChild("Humanoid")
 end)
 
-local targetPattern = "relkonta"  -- partial match
-
--- Remote path (safe wait)
-local remote
-pcall(function()
-    remote = ReplicatedStorage:WaitForChild("Remotes", 10)
-                       :WaitForChild("Requests", 10)
-                       :WaitForChild("SetMenuState", 8)
-end)
-
-if not remote then
-    warn("SetMenuState remote NOT found — menu open/close will be skipped")
-end
-
+local remote = ReplicatedStorage:WaitForChild("Remotes"):WaitForChild("Requests"):WaitForChild("SetMenuState")
 local lastHealth = 100
 
-print("FULL SCRIPT RUNNING | Target: *" .. targetPattern .. "* | KEY 1 press after menu close")
-
 while true do
-    -- Find target (name or displayname partial match)
     local targetChar = nil
     for _, p in ipairs(Players:GetPlayers()) do
-        local n = p.Name:lower()
-        local d = p.DisplayName:lower()
-        if n:find(targetPattern, 1, true) or d:find(targetPattern, 1, true) then
+        if p.Name:lower():find("relkonta") or p.DisplayName:lower():find("relkonta") then
             if p.Character and p.Character:FindFirstChild("HumanoidRootPart") then
                 targetChar = p.Character
                 break
@@ -53,44 +32,38 @@ while true do
         end
     end
 
-    -- Teleport if found
     if targetChar and character and character:FindFirstChild("HumanoidRootPart") then
-        local myHRP   = character.HumanoidRootPart
+        local myHRP = character.HumanoidRootPart
         local targHRP = targetChar.HumanoidRootPart
         
         local forward = targHRP.CFrame.LookVector
-        local pos     = targHRP.Position - forward * 1.7
-        myHRP.CFrame  = CFrame.new(pos, targHRP.Position)
-    end
-
-    -- Health check
-    local currHealth = humanoid and humanoid.Health or 100
-
-    if currHealth < 100 and lastHealth >= 100 then
-        print("HEALTH DROPPED BELOW 100 → starting sequence")
-
-        if remote then
-            pcall(function() remote:InvokeServer(true) end)
-            print(" → Opened menu (true)")
-            task.wait(0.2)
-
-            pcall(function() remote:InvokeServer(false) end)
-            print(" → Closed menu (false)")
-            task.wait(0.5)
-
-            -- Press KEY 1
-            pcall(function()
-                VirtualInput:SendKeyEvent(true,  Enum.KeyCode.One, false, game)
-                task.wait(0.04)  -- short hold
-                VirtualInput:SendKeyEvent(false, Enum.KeyCode.One, false, game)
-                print(" → PRESSED & RELEASED KEY 1")
-            end)
-        else
-            warn("Remote missing → skipping menu & key press")
+        local pos = targHRP.Position - forward * 1.4
+        myHRP.CFrame = CFrame.new(pos, targHRP.Position)
+        
+        pcall(function()
+            myHRP:SetNetworkOwner(lp)
+        end)
+        
+        local hum = character:FindFirstChild("Humanoid")
+        if hum then
+            hum:ChangeState(Enum.HumanoidStateType.Jumping)
+            task.wait(0.03)
+            myHRP.AssemblyLinearVelocity = Vector3.new(0, 20, 0)
         end
     end
 
+    local currHealth = humanoid and humanoid.Health or 100
+    if currHealth <= 99 and lastHealth > 99 then
+        remote:InvokeServer(true)
+        task.wait(0.18)
+        remote:InvokeServer(false)
+        task.wait(0.18)
+        
+        VirtualInput:SendKeyEvent(true, Enum.KeyCode.One, false, game)
+        task.wait(0.04)
+        VirtualInput:SendKeyEvent(false, Enum.KeyCode.One, false, game)
+    end
+    
     lastHealth = currHealth
-
-    RunService.Heartbeat:Wait()  -- ~60 times/sec, smooth
+    RunService.Heartbeat:Wait()
 end
