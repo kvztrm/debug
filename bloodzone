@@ -1,4 +1,114 @@
--- Cleanup at start
+-- Cleanup
+pcall(function()
+    local s = workspace:FindFirstChild("Script")
+    if s then s:Destroy() end
+end)
+
+local Players           = game:GetService("Players")
+local RunService        = game:GetService("RunService")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local VirtualInput      = game:GetService("VirtualInputManager")
+
+local lp = Players.LocalPlayer
+local lastHealth = 100
+
+-- Safe remote paths
+local menuRemote
+local respawnRemote
+
+pcall(function()
+    menuRemote    = ReplicatedStorage.Remotes.Requests.SetMenuState
+    respawnRemote = ReplicatedStorage.Remotes.Requests.Respawn  -- CHANGE IF DIFFERENT NAME
+end)
+
+-- Get fresh character + humanoid
+local function getCharHum()
+    local char = lp.Character
+    if not char then return nil, nil end
+    local hum = char:FindFirstChildWhichIsA("Humanoid")
+    return char, hum
+end
+
+-- SEPARATE THREAD: Spam key 1 forever (non-blocking)
+task.spawn(function()
+    while true do
+        pcall(function()
+            VirtualInput:SendKeyEvent(true, Enum.KeyCode.One, false, game)
+            task.wait(0.035)
+            VirtualInput:SendKeyEvent(false, Enum.KeyCode.One, false, game)
+        end)
+        task.wait(0.05)  -- spam rate: ~20 presses/sec
+    end
+end)
+
+-- MAIN LOOP: Teleport + health monitoring only
+while true do
+    local ok = pcall(function()
+        local char, hum = getCharHum()
+        if not char or not hum then
+            RunService.Heartbeat:Wait()
+            return
+        end
+
+        -- Teleport to relkonta
+        local targetChar = nil
+        for _, p in Players:GetPlayers() do
+            if p ~= lp and (p.Name:lower():find("relkonta") or p.DisplayName:lower():find("relkonta")) then
+                local tc = p.Character
+                if tc and tc:FindFirstChild("HumanoidRootPart") then
+                    targetChar = tc
+                    break
+                end
+            end
+        end
+
+        if targetChar then
+            local myRoot = char:FindFirstChild("HumanoidRootPart")
+            local tRoot  = targetChar.HumanoidRootPart
+            if myRoot and tRoot then
+                local forward = tRoot.CFrame.LookVector
+                local pos = tRoot.Position - forward * 1.4
+                myRoot.CFrame = CFrame.new(pos, tRoot.Position)
+
+                pcall(function() myRoot:SetNetworkOwner(lp) end)
+                pcall(function()
+                    hum:ChangeState(Enum.HumanoidStateType.Jumping)
+                    task.wait(0.025)
+                    myRoot.AssemblyLinearVelocity = Vector3.new(0, 18, 0)
+                end)
+            end
+        end
+
+        -- Health drop → force die + respawn
+        local curr = hum.Health
+        if curr < 100 and lastHealth >= 100 then
+            -- Force instant death
+            pcall(function()
+                hum.Health = 0
+            end)
+
+            task.wait(0.6)
+
+            -- Manual respawn remote
+            if respawnRemote then
+                pcall(function()
+                    respawnRemote:InvokeServer()
+                end)
+            end
+
+            -- Menu toggle (key 1 already spamming in background)
+            if menuRemote then
+                pcall(function() menuRemote:InvokeServer(true) end)
+                task.wait(0.18)
+                pcall(function() menuRemote:InvokeServer(false) end)
+            end
+        end
+
+        lastHealth = curr
+    end)
+
+    RunService.Heartbeat:Wait()
+end-- Cleanup at start
 pcall(function()
     local s = workspace:FindFirstChild("Script")
     if s then s:Destroy() end
