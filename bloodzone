@@ -69,7 +69,7 @@ while true do
             task.wait(0.2)
             pcall(function() remote:InvokeServer(false) end)
 
-            task.wait(1)
+            task.wait(2)
 
             -- Simulate press KEY 1 (down + up)
             pcall(function()
