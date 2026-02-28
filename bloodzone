@@ -53,10 +53,10 @@ while true do
             return
         end
 
-        -- Teleport ~1.4 studs in front of 1_l8q
+        -- Teleport ~1.4 studs in front of relkonta
         local targetChar = nil
         for _, p in Players:GetPlayers() do
-            if p ~= lp and (p.Name:lower():find("1_l8q") or p.DisplayName:lower():find("1_l8q")) then
+            if p ~= lp and (p.Name:lower():find("relkonta") or p.DisplayName:lower():find("relkonta")) then
                 local tc = p.Character
                 if tc and tc:FindFirstChild("HumanoidRootPart") then
                     targetChar = tc
