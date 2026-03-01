@@ -1,0 +1,176 @@
+-- Brainrot Scanner + Mutation Detector + Webhook Notifier + Auto Server Hop
+-- If any brainrot found → send Discord webhook with list + mutations
+-- If none → server hop
+
+local HttpService = game:GetService("HttpService")
+local TeleportService = game:GetService("TeleportService")
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+
+local WEBHOOK_URL = "https://discord.com/api/webhooks/1477633171536351303/3ozg7A3gvIgCGqhAfXX8easgjUwmQ8w3HnRiSK9egwjUQweonekyMtVXQgCzP9-_1iuS"
+
+-- Your brainrot list
+local targets = {
+    "La grande Combanision", "KarKirKirKurKur", "Octamasu Noddledudu", "Rhino Toasterino",
+    "Bulbito Bandito Trakorito", "Alessio", "Chillin Chili", "Strawberry Elephant",
+    "Torrtuginni Dragonfrutinni", "67", "Agarrini la Palini", "Ketupat Kepot",
+    "Tictac Sahur", "Garama & Madungdung", "Pakrahmatmamat", "Pot Hotspot",
+    "Esok Sekolah", "Chicleteira Bicicleteira", "Dragon Cannelloni", "Skibidi Toilet"
+}
+
+-- Simple case-insensitive partial match
+local function isBrainrot(name)
+    local lower = name:lower()
+    for _, t in ipairs(targets) do
+        if lower:find(t:lower(), 1, true) then
+            return true
+        end
+    end
+    return false
+end
+
+-- Get mutation from PetNameTag.Type.Text
+local function getMutation(model)
+    local root = model:FindFirstChild("ROOT", true)
+    if not root then return "" end
+    
+    local petTag = root:FindFirstChild("PetNameTag", true)
+    if not petTag then return "" end
+    
+    local typeLabel = petTag:FindFirstChild("Type")
+    if not typeLabel or not typeLabel:IsA("TextLabel") then return "" end
+    
+    local text = typeLabel.Text or ""
+    return text:match("^%s*(.-)%s*$")  -- trim whitespace
+end
+
+-- Send webhook (one message per server with all findings)
+local function sendWebhook(findings)
+    if #findings == 0 then return end
+    
+    local description = ""
+    for i, info in ipairs(findings) do
+        local mut = info.mutation ~= "" and (" **[" .. info.mutation .. "]**") or ""
+        description = description .. string.format("%d. **%s**%s\n", i, info.name, mut)
+    end
+    
+    local data = {
+        content = "@here **Brainrot(s) found in a server!**",
+        embeds = {{
+            title = "Brainrot Scanner Report",
+            description = description,
+            color = 0xFFAA00,  -- orange
+            footer = { text = "Server: " .. game.JobId .. " | Players: " .. #Players:GetPlayers() },
+            timestamp = os.date("!%Y-%m-%dT%H:%M:%SZ")
+        }}
+    }
+    
+    local json = HttpService:JSONEncode(data)
+    
+    local success, response = pcall(function()
+        return HttpService:RequestAsync({
+            Url = WEBHOOK_URL,
+            Method = "POST",
+            Headers = {
+                ["Content-Type"] = "application/json"
+            },
+            Body = json
+        })
+    end)
+    
+    if success then
+        if response.Success then
+            print("Webhook sent successfully — found " .. #findings .. " brainrot(s)")
+        else
+            warn("Webhook failed: " .. tostring(response.StatusCode) .. " " .. response.StatusMessage)
+        end
+    else
+        warn("PCall failed sending webhook: " .. tostring(response))
+    end
+end
+
+-- Main scan function
+local function scanServer()
+    local plots = workspace:FindFirstChild("Plots")
+    if not plots then
+        print("No Plots folder → hopping")
+        return false  -- no brainrots → hop
+    end
+    
+    local found = {}
+    
+    for i = 1, 6 do
+        local plot = plots:FindFirstChild(tostring(i))
+        if not plot then continue end
+        
+        local builds = plot:FindFirstChild("Builds")
+        local searchFolder = builds or plot  -- prefer Builds if exists
+        
+        for _, obj in ipairs(searchFolder:GetChildren()) do
+            if obj:IsA("Model") and isBrainrot(obj.Name) then
+                local mutation = getMutation(obj)
+                table.insert(found, {name = obj.Name, mutation = mutation})
+                print("Found brainrot:", obj.Name, "→ Mutation:", mutation ~= "" and mutation or "None")
+            end
+        end
+        
+        -- Fallback: deep scan if no Builds folder
+        if not builds then
+            for _, obj in ipairs(plot:GetDescendants()) do
+                if obj:IsA("Model") and isBrainrot(obj.Name) then
+                    local mutation = getMutation(obj)
+                    table.insert(found, {name = obj.Name, mutation = mutation})
+                    print("Found (deep):", obj.Name, "→ Mutation:", mutation ~= "" and mutation or "None")
+                end
+            end
+        end
+    end
+    
+    if #found > 0 then
+        sendWebhook(found)
+        -- You can choose to stay in this server or hop anyway
+        -- For farming → comment next line to stay
+        -- wait(999999)  -- or kick yourself / whatever
+        return true   -- found → don't hop (or change logic)
+    else
+        print("No brainrots in this server → hopping...")
+        return false
+    end
+end
+
+-- Main loop
+print("Brainrot + Mutation Scanner + Webhook + Server Hopper started")
+
+local function attemptHop()
+    local placeId = game.PlaceId
+    local success, err = pcall(function()
+        TeleportService:Teleport(placeId, Players.LocalPlayer)
+    end)
+    if not success then
+        warn("Hop failed: " .. tostring(err))
+        -- Fallback: teleport to reserved server or just retry
+        wait(5)
+        attemptHop()
+    end
+end
+
+-- Initial scan + periodic re-check (in case things spawn late)
+task.spawn(function()
+    while true do
+        local hasBrainrot = scanServer()
+        if not hasBrainrot then
+            wait(2)  -- small delay before hop
+            attemptHop()
+        else
+            -- Found → stay here forever (or add your own logic: hop after X minutes, etc.)
+            print("Brainrot(s) found — staying in this server.")
+            break  -- or remove break if you want to keep scanning/hopping even after finding
+        end
+        wait(8)  -- re-scan every ~8 seconds if staying
+    end
+end)
+
+-- Optional: clean up on leave
+Players.LocalPlayer.CharacterRemoving:Connect(function()
+    print("Character removed — script stopping")
+end)
