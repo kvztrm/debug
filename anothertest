@@ -1,4 +1,60 @@
--- FIXED: AccessoryType as STRING ("Hat", "Back", "Shoulder", "Hair", "Face", "Front", etc.) - NO Enum!
+-- WORKING: String AccessoryType from your example ("Face"). Run each separately in Bloxbiz.
+-- Confirmed particles (fire/sparkles) + correct types/IDs from catalog/wiki/Rolimons.<grok-card data-id="ee59f4" data-type="citation_card" data-plain-type="render_inline_citation" ></grok-card><grok-card data-id="c8dca7" data-type="citation_card" data-plain-type="render_inline_citation" ></grok-card><grok-card data-id="1f32ed" data-type="citation_card" data-plain-type="render_inline_citation" ></grok-card><grok-card data-id="099d72" data-type="citation_card" data-plain-type="render_inline_citation" ></grok-card>
+
+-- Fiery Horns of the Netherworld (fire Hat) ID:215718515 Type:Hat
+game:GetService("ReplicatedStorage"):WaitForChild("BloxbizRemotes"):WaitForChild("CatalogOnApplyToRealHumanoid"):FireServer({
+    {
+        AccessoryData = {
+            Order = 1,
+            AccessoryType = "Hat",
+            AssetId = 215718515
+        }
+    }
+})
+
+-- Doomsekkar (green fire Hat) ID:132809431 Type:Hat
+game:GetService("ReplicatedStorage"):WaitForChild("BloxbizRemotes"):WaitForChild("CatalogOnApplyToRealHumanoid"):FireServer({
+    {
+        AccessoryData = {
+            Order = 1,
+            AccessoryType = "Hat",
+            AssetId = 132809431
+        }
+    }
+})
+
+-- Frozen Horns of the Frigid Planes (blue fire Hat) ID:74891470 Type:Hat
+game:GetService("ReplicatedStorage"):WaitForChild("BloxbizRemotes"):WaitForChild("CatalogOnApplyToRealHumanoid"):FireServer({
+    {
+        AccessoryData = {
+            Order = 1,
+            AccessoryType = "Hat",
+            AssetId = 74891470
+        }
+    }
+})
+
+-- Flaming Mohawk (fire Hair) ID:191101707 Type:Hair
+game:GetService("ReplicatedStorage"):WaitForChild("BloxbizRemotes"):WaitForChild("CatalogOnApplyToRealHumanoid"):FireServer({
+    {
+        AccessoryData = {
+            Order = 1,
+            AccessoryType = "Hair",
+            AssetId = 191101707
+        }
+    }
+})
+
+-- Spring Fairy (sparkles Shoulder) ID:150381051 Type:Shoulder
+game:GetService("ReplicatedStorage"):WaitForChild("BloxbizRemotes"):WaitForChild("CatalogOnApplyToRealHumanoid"):FireServer({
+    {
+        AccessoryData = {
+            Order = 1,
+            AccessoryType = "Shoulder",
+            AssetId = 150381051
+        }
+    }
+})-- FIXED: AccessoryType as STRING ("Hat", "Back", "Shoulder", "Hair", "Face", "Front", etc.) - NO Enum!
 -- Confirmed particles from Roblox Wiki/Rolimons/Catalog. Run each separately.
 
 -- Fiery Horns of the Netherworld (fire) - Hat
