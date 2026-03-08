@@ -1,148 +1,79 @@
--- FireServer for each particle accessory individually
--- Copy-paste one at a time or run in sequence
--- Shoulder = "Shoulder" (not Enum.Shoulders)
+-- FIXED: AccessoryType as STRING ("Hat", "Back", "Shoulder", "Hair", "Face", "Front", etc.) - NO Enum!
+-- Confirmed particles from Roblox Wiki/Rolimons/Catalog. Run each separately.
 
--- SPARKLES/FAIRY
+-- Fiery Horns of the Netherworld (fire) - Hat
 game:GetService("ReplicatedStorage"):WaitForChild("BloxbizRemotes"):WaitForChild("CatalogOnApplyToRealHumanoid"):FireServer({
     {
         AccessoryData = {
             Order = 1,
-            AccessoryType = Enum.AccessoryType.Hat,
-            AssetId = 150381051  -- Spring Fairy
+            AccessoryType = "Hat",
+            AssetId = 215718515
         }
     }
 })
 
+-- Doomsekkar (green fire/smoke) - Hat
 game:GetService("ReplicatedStorage"):WaitForChild("BloxbizRemotes"):WaitForChild("CatalogOnApplyToRealHumanoid"):FireServer({
     {
         AccessoryData = {
             Order = 1,
-            AccessoryType = Enum.AccessoryType.Hat,
-            AssetId = 141742418  -- Winter Fairy
+            AccessoryType = "Hat",
+            AssetId = 132809431
         }
     }
 })
 
+-- Frozen Horns of the Frigid Planes (blue fire) - Hat
 game:GetService("ReplicatedStorage"):WaitForChild("BloxbizRemotes"):WaitForChild("CatalogOnApplyToRealHumanoid"):FireServer({
     {
         AccessoryData = {
             Order = 1,
-            AccessoryType = Enum.AccessoryType.Back,
-            AssetId = 192557913  -- Sparkling Angel Wings
+            AccessoryType = "Hat",
+            AssetId = 74891470
         }
     }
 })
 
--- FIRE/FLAMES
+-- Flaming Mohawk (fire) - Hair
 game:GetService("ReplicatedStorage"):WaitForChild("BloxbizRemotes"):WaitForChild("CatalogOnApplyToRealHumanoid"):FireServer({
     {
         AccessoryData = {
             Order = 1,
-            AccessoryType = Enum.AccessoryType.Hat,
-            AssetId = 215718515  -- Fiery Horns of the Netherworld
+            AccessoryType = "Hair",
+            AssetId = 191101707
         }
     }
 })
 
+-- Golden Sparkling Wings (gold sparkles) - Back
 game:GetService("ReplicatedStorage"):WaitForChild("BloxbizRemotes"):WaitForChild("CatalogOnApplyToRealHumanoid"):FireServer({
     {
         AccessoryData = {
             Order = 1,
-            AccessoryType = Enum.AccessoryType.Hat,
-            AssetId = 191101707  -- Flaming Mohawk
+            AccessoryType = "Back",
+            AssetId = 417456127
         }
     }
 })
 
+-- TRY as Shoulder if Back fails
 game:GetService("ReplicatedStorage"):WaitForChild("BloxbizRemotes"):WaitForChild("CatalogOnApplyToRealHumanoid"):FireServer({
     {
         AccessoryData = {
             Order = 1,
-            AccessoryType = Enum.AccessoryType.Hat,
-            AssetId = 74891470  -- Frozen Horns
+            AccessoryType = "Shoulder",
+            AssetId = 417456127
         }
     }
 })
 
+-- Spring Fairy (sparkles) - Hat (common ID from lists)
 game:GetService("ReplicatedStorage"):WaitForChild("BloxbizRemotes"):WaitForChild("CatalogOnApplyToRealHumanoid"):FireServer({
     {
         AccessoryData = {
             Order = 1,
-            AccessoryType = Enum.AccessoryType.Front,
-            AssetId = 3756389957  -- Cursed Flames
-        }
-    }
-})
-
--- SMOKE/GLOW
-game:GetService("ReplicatedStorage"):WaitForChild("BloxbizRemotes"):WaitForChild("CatalogOnApplyToRealHumanoid"):FireServer({
-    {
-        AccessoryData = {
-            Order = 1,
-            AccessoryType = Enum.AccessoryType.Hair,
-            AssetId = 2316755277  -- Singed Scientist Hair
-        }
-    }
-})
-
-game:GetService("ReplicatedStorage"):WaitForChild("BloxbizRemotes"):WaitForChild("CatalogOnApplyToRealHumanoid"):FireServer({
-    {
-        AccessoryData = {
-            Order = 1,
-            AccessoryType = Enum.AccessoryType.Back,
-            AssetId = 2413964589  -- Ghost Back Lantern
-        }
-    }
-})
-
--- SHOULDERS (using "Shoulder")
-game:GetService("ReplicatedStorage"):WaitForChild("BloxbizRemotes"):WaitForChild("CatalogOnApplyToRealHumanoid"):FireServer({
-    {
-        AccessoryData = {
-            Order = 1,
-            AccessoryType = Enum.AccessoryType.Shoulder,
-            AssetId = 183468963  -- Ghosdeeri (blue fire wings)
-        }
-    }
-})
-
-game:GetService("ReplicatedStorage"):WaitForChild("BloxbizRemotes"):WaitForChild("CatalogOnApplyToRealHumanoid"):FireServer({
-    {
-        AccessoryData = {
-            Order = 1,
-            AccessoryType = Enum.AccessoryType.Shoulder,
-            AssetId = 417456127  -- Golden Sparkling Wings (shoulder alt)
-        }
-    }
-})
-
--- CLASSICS
-game:GetService("ReplicatedStorage"):WaitForChild("BloxbizRemotes"):WaitForChild("CatalogOnApplyToRealHumanoid"):FireServer({
-    {
-        AccessoryData = {
-            Order = 1,
-            AccessoryType = Enum.AccessoryType.Hat,
-            AssetId = 132809431  -- Doomsekkar
-        }
-    }
-})
-
-game:GetService("ReplicatedStorage"):WaitForChild("BloxbizRemotes"):WaitForChild("CatalogOnApplyToRealHumanoid"):FireServer({
-    {
-        AccessoryData = {
-            Order = 1,
-            AccessoryType = Enum.AccessoryType.Hat,
-            AssetId = 89171071  -- Boss White Hat
-        }
-    }
-})
-
-game:GetService("ReplicatedStorage"):WaitForChild("BloxbizRemotes"):WaitForChild("CatalogOnApplyToRealHumanoid"):FireServer({
-    {
-        AccessoryData = {
-            Order = 1,
-            AccessoryType = Enum.AccessoryType.Hat,
-            AssetId = 15316834620  -- Flaming Hot Chip Head
+            AccessoryType = "Hat",
+            AssetId = 150381051
         }
     }
 })
