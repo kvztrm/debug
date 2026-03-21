@@ -1,76 +1,100 @@
 local ReGui = loadstring(game:HttpGet("https://api.lithium.wtf/misc/regui"))()
+
 local Window = ReGui:Window({
-    Title = "RakNet Desync (Stable-ish)",
-    Size = UDim2.fromOffset(220, 180),
+    Title = "RakNet Desync (Q/X Keys + Timer)",
+    Size = UDim2.fromOffset(240, 180),
 })
 
-local plsraknet = Raknet or raknet or rnet
-if not plsraknet then
-    local Popup = Window:PopupModal({ Title = "Error" })
-    Popup:Label({ Text = "No RakNet library detected!" })
-    Popup:Separator()
-    Popup:Button({
-        Text = "Close",
-        Callback = function() Popup:ClosePopup() end,
-    })
-    return  -- stop script
-end
-
-Window:Label({ Text = "Warning: Long desync often causes reconnects/kicks" })
+-- Find RakNet lib (common names)
+local plsraknet = rawget(_G, "plsraknet") or Raknet or raknet or rnet
 
 local desyncActive = false
-local maxDuration = 8  -- seconds before auto-disable (change this)
-local durationSlider = Window:Slider({
-    Label = "Max desync duration (sec)",
-    Min = 3,
-    Max = 30,
-    Default = maxDuration,
-    Callback = function(Value)
-        maxDuration = Value
-    end,
-})
+local autoDisableTimer = 8  -- seconds before auto-off (change or use slider)
+
+if not plsraknet or not plsraknet.desync then
+    local Popup = Window:PopupModal({ Title = "Error" })
+    Popup:Label({ Text = "No valid plsraknet / raknet library with .desync() found!" })
+    Popup:Separator()
+    Popup:Button({
+        Text = "OK",
+        Callback = function() Popup:ClosePopup() end,
+    })
+    return  -- stop if no lib
+end
+
+Window:Label({ Text = "Warning: Long desync → reconnects/kicks" })
+Window:Label({ Text = "Q = Toggle   |   X = Force OFF" })
 
 local statusLabel = Window:Label({ Text = "Status: OFF" })
 
 local function updateStatus()
-    statusLabel:SetText("Status: " .. (desyncActive and "ON (auto-off in ~" .. maxDuration .. "s)" or "OFF"))
+    statusLabel:SetText("Status: " .. (desyncActive and "ON (auto-off in ~" .. autoDisableTimer .. "s)" or "OFF"))
 end
 
+local function setDesync(value)
+    plsraknet.desync(value)
+    desyncActive = value
+    updateStatus()
+
+    if value then
+        print("[Desync] Enabled – auto-disable in " .. autoDisableTimer .. "s to avoid reconnect")
+        task.delay(autoDisableTimer, function()
+            if desyncActive then
+                plsraknet.desync(false)
+                desyncActive = false
+                checkbox:SetValue(false)
+                updateStatus()
+                print("[Desync] Auto-disabled (prevented kick)")
+            end
+        end)
+    else
+        print("[Desync] Disabled")
+    end
+end
+
+-- Sync checkbox with function
 local checkbox = Window:Checkbox({
     Value = false,
     Label = "Enable Desync",
-    Callback = function(self, Value: boolean)
-        if not plsraknet.desync then
-            warn("plsraknet.desync function missing!")
-            self:SetValue(false)
-            return
-        end
+    Callback = function(self, Value)
+        setDesync(Value)
+    end,
+})
 
-        plsraknet.desync(Value)
-        desyncActive = Value
-
-        updateStatus()
-
-        if Value then
-            print("[Desync] Enabled – will auto-disable in " .. maxDuration .. " seconds")
-            task.delay(maxDuration, function()
-                if desyncActive then
-                    plsraknet.desync(false)
-                    desyncActive = false
-                    checkbox:SetValue(false)
-                    updateStatus()
-                    print("[Desync] Auto-disabled to prevent reconnect")
-                end
-            end)
-        else
-            print("[Desync] Disabled manually")
+-- Slider to adjust auto-disable time
+Window:Slider({
+    Label = "Auto-disable after (sec)",
+    Min = 3,
+    Max = 25,
+    Default = autoDisableTimer,
+    Callback = function(Value)
+        autoDisableTimer = Value
+        if desyncActive then
+            updateStatus()  -- refresh label
         end
     end,
 })
 
--- Optional: force off on script end / character respawn
+-- Keybinds (Q toggle, X kill)
+local UserInputService = game:GetService("UserInputService")
+UserInputService.InputBegan:Connect(function(input, gpe)
+    if gpe then return end
+
+    if input.KeyCode == Enum.KeyCode.Q then
+        setDesync(not desyncActive)
+        checkbox:SetValue(desyncActive)  -- sync GUI checkbox
+    elseif input.KeyCode == Enum.KeyCode.X then
+        setDesync(false)
+        checkbox:SetValue(false)
+        print("[Desync] Killed via X key")
+    end
+end)
+
+-- Optional: force off on close / respawn
 game:BindToClose(function()
-    if desyncActive and plsraknet.desync then
+    if desyncActive then
         plsraknet.desync(false)
     end
 end)
+
+print("[Desync GUI with Keys] Loaded – use Q/X or checkbox")
