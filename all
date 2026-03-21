@@ -1,182 +1,185 @@
--- RakNet Desync Toggle + Server Position Visualizer
--- Toggle: Q   |   Kill/Reset: X
--- Requires executor with Raknet library (Delta, etc.)
+-- Improved RakNet Desync + Dual Visualizer (Client blue vs Server red/white)
+-- Toggle: Q   |   Kill/Reset + Debug: X
+-- Watch console for errors / status
 
 local UserInputService = game:GetService("UserInputService")
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local LocalPlayer = Players.LocalPlayer
 
-local Raknet = rawget(_G, "Raknet") or rawget(_G, "raknet")  -- common exposure
+local raknet = rawget(_G, "Raknet") or rawget(_G, "raknet") or rawget(_G, "rnet")  -- try common names
 
-local desyncEnabled = false
-local visualizerEnabled = true  -- you can toggle this too if wanted
-local lastKnownServerCFrame = CFrame.new()  -- fallback if no better way
-local serverDummy = nil             -- visual clone
-local highlight = nil
-local billboard = nil
+local desyncActive = false
+local clientViz, serverViz, clientHighlight, serverHighlight
+local lastServerCFrame = CFrame.new()
+local lastVelocity = Vector3.new()
 
 -- ────────────────────────────────────────────
--- Create visualizer (white outline + red fill)
-local function createVisualizer()
-    if serverDummy then serverDummy:Destroy() end
-    if highlight then highlight:Destroy() end
-    if billboard then billboard:Destroy() end
-
+local function createVisualizers()
     local char = LocalPlayer.Character
-    if not char or not char.PrimaryPart then return end
+    if not char or not char:FindFirstChild("HumanoidRootPart") then
+        warn("[Viz] No character / HRP yet - retry after spawn")
+        return
+    end
 
-    -- Clone a simple dummy for position visualization
-    serverDummy = Instance.new("Part")
-    serverDummy.Name = "ServerPosDummy"
-    serverDummy.Size = char.PrimaryPart.Size + Vector3.new(0.2, 0.2, 0.2)
-    serverDummy.Transparency = 0.4
-    serverDummy.Color = Color3.fromRGB(255, 0, 0)  -- red fill
-    serverDummy.CanCollide = false
-    serverDummy.Anchored = true
-    serverDummy.Parent = workspace
+    -- Clean old
+    if clientViz then clientViz:Destroy() end
+    if serverViz then serverViz:Destroy() end
+    if clientHighlight then clientHighlight:Destroy() end
+    if serverHighlight then serverHighlight:Destroy() end
 
-    highlight = Instance.new("Highlight")
-    highlight.Name = "ServerHighlight"
-    highlight.FillColor = Color3.fromRGB(255, 0, 0)
-    highlight.OutlineColor = Color3.fromRGB(255, 255, 255)
-    highlight.FillTransparency = 0.35
-    highlight.OutlineTransparency = 0
-    highlight.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
-    highlight.Adornee = serverDummy
-    highlight.Parent = game.CoreGui  -- or serverDummy
+    -- Client viz (blue - where YOU see yourself)
+    clientViz = Instance.new("Part")
+    clientViz.Name = "ClientPosViz"
+    clientViz.Size = char.HumanoidRootPart.Size + Vector3.new(0.4, 0.4, 0.4)
+    clientViz.Transparency = 0.6
+    clientViz.Color = Color3.fromRGB(0, 100, 255)  -- blue fill
+    clientViz.CanCollide = false
+    clientViz.Anchored = true
+    clientViz.Parent = workspace
 
-    -- Optional billboard label
-    billboard = Instance.new("BillboardGui")
-    billboard.Name = "ServerLabel"
-    billboard.Size = UDim2.new(4, 0, 2, 0)
-    billboard.StudsOffset = Vector3.new(0, 3.5, 0)
-    billboard.AlwaysOnTop = true
-    billboard.Parent = serverDummy
+    clientHighlight = Instance.new("Highlight")
+    clientHighlight.FillColor = Color3.fromRGB(0, 100, 255)
+    clientHighlight.OutlineColor = Color3.fromRGB(200, 200, 255)
+    clientHighlight.FillTransparency = 0.5
+    clientHighlight.OutlineTransparency = 0
+    clientHighlight.Adornee = clientViz
+    clientHighlight.Parent = game:GetService("CoreGui")  -- try CoreGui for visibility
 
-    local text = Instance.new("TextLabel", billboard)
-    text.Size = UDim2.new(1,0,1,0)
-    text.BackgroundTransparency = 1
-    text.Text = "SERVER POS"
-    text.TextColor3 = Color3.new(1,1,1)
-    text.TextStrokeTransparency = 0
-    text.TextStrokeColor3 = Color3.new(0,0,0)
-    text.Font = Enum.Font.SourceSansBold
-    text.TextSize = 24
+    -- Server viz (red fill + white outline)
+    serverViz = Instance.new("Part")
+    serverViz.Name = "ServerPosViz"
+    serverViz.Size = clientViz.Size
+    serverViz.Transparency = 0.4
+    serverViz.Color = Color3.fromRGB(255, 0, 0)  -- red fill
+    serverViz.CanCollide = false
+    serverViz.Anchored = true
+    serverViz.Parent = workspace
+
+    serverHighlight = Instance.new("Highlight")
+    serverHighlight.FillColor = Color3.fromRGB(255, 0, 0)
+    serverHighlight.OutlineColor = Color3.fromRGB(255, 255, 255)
+    serverHighlight.FillTransparency = 0.35
+    serverHighlight.OutlineTransparency = 0
+    serverHighlight.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
+    serverHighlight.Adornee = serverViz
+    serverHighlight.Parent = game:GetService("CoreGui")
+
+    print("[Viz] Visualizers created - blue = your local pos, red/white = server pos")
 end
 
--- Update visualizer position (runs every frame when enabled)
-local connection
-local function updateVisualizer()
-    if connection then connection:Disconnect() end
+-- Update loop
+local updateConn
+local function startUpdateLoop()
+    if updateConn then updateConn:Disconnect() end
+    updateConn = RunService.Heartbeat:Connect(function(dt)
+        local char = LocalPlayer.Character
+        if not char or not char:FindFirstChild("HumanoidRootPart") then return end
 
-    connection = RunService.Heartbeat:Connect(function()
-        if not visualizerEnabled or not desyncEnabled then return end
-        if not serverDummy then return end
+        local hrp = char.HumanoidRootPart
 
-        -- Try to use last replicated CFrame (if you have a way to read it)
-        -- Fallback: estimate from last movement before desync
-        serverDummy.CFrame = lastKnownServerCFrame
+        -- Client viz always follows real local position
+        if clientViz then
+            clientViz.CFrame = hrp.CFrame
+        end
+
+        -- Server viz: fallback prediction (last known + velocity * estimated lag)
+        -- Not perfect, but better than nothing without packet reading
+        if serverViz and desyncActive then
+            lastVelocity = hrp.AssemblyLinearVelocity
+            lastServerCFrame = lastServerCFrame + lastVelocity * dt  -- crude extrapolation
+            serverViz.CFrame = lastServerCFrame
+        end
     end)
 end
 
 -- ────────────────────────────────────────────
--- Desync control (blocks outgoing replication packets)
-local sendHookId = nil
+local hookId = nil
 
-local function enableDesync()
-    if not Raknet then
-        warn("[Desync] No Raknet library found in _G — visualizer only")
+local function toggleDesync()
+    local char = LocalPlayer.Character
+    if not char or not char:FindFirstChild("HumanoidRootPart") then
+        warn("[Desync] No character loaded - wait and try again")
         return
     end
 
-    if desyncEnabled then return end
-    desyncEnabled = true
+    desyncActive = not desyncActive
 
-    -- Common methods from 2026 executors (Delta/SynZ forks)
-    if Raknet.desync then
-        Raknet.desync(true)
-        print("[Desync] Activated via raknet.desync(true)")
-    elseif Raknet.add_send_hook then
-        -- Hook outgoing packets and drop replication-related ones
-        sendHookId = Raknet.add_send_hook(function(packet)
-            -- Very naive filter: drop physics/position replication packets
-            -- (real filters are more complex: check opcode, channel, payload)
-            if packet:find("Physics") or packet:find("Replicate") or packet:find("CFrame") then
-                return false  -- block / don't send
+    if desyncActive then
+        lastServerCFrame = char.HumanoidRootPart.CFrame  -- baseline
+        createVisualizers()
+        startUpdateLoop()
+
+        if not raknet then
+            warn("[Desync] No Raknet/rnet found in _G - visualizer only (no real desync)")
+        else
+            -- Try common 2026 APIs
+            if raknet.desync then
+                raknet.desync(true)
+                print("[Desync] Activated via raknet.desync(true)")
+            elseif raknet.enable then
+                raknet.enable()  -- some use this
+                print("[Desync] Activated via raknet.enable()")
+            elseif raknet.startcapture then  -- Celery style
+                raknet.startcapture()
+                print("[Desync] Capture started (may need manual packet drop)")
+            else
+                warn("[Desync] Unknown Raknet API - check executor docs or print(raknet)")
             end
-            return true
-        end)
-        print("[Desync] Activated via send_hook (blocks replication packets)")
-    else
-        warn("[Desync] No supported Raknet method found")
-    end
-
-    -- Record current CFrame as "server pos" baseline
-    local char = LocalPlayer.Character
-    if char and char.PrimaryPart then
-        lastKnownServerCFrame = char.PrimaryPart.CFrame
-    end
-
-    createVisualizer()
-    updateVisualizer()
-end
-
-local function disableDesync()
-    if not desyncEnabled then return end
-    desyncEnabled = false
-
-    if Raknet then
-        if Raknet.desync then
-            Raknet.desync(false)
-        elseif sendHookId and Raknet.remove_send_hook then
-            Raknet.remove_send_hook(sendHookId)
-            sendHookId = nil
         end
+    else
+        if raknet then
+            if raknet.desync then raknet.desync(false) end
+            if raknet.disable then raknet.disable() end
+            if raknet.stopcapture then raknet.stopcapture() end
+        end
+        if updateConn then updateConn:Disconnect() end
+        print("[Desync] Disabled")
     end
-
-    if serverDummy then serverDummy:Destroy() serverDummy = nil end
-    if highlight then highlight:Destroy() highlight = nil end
-    if billboard then billboard:Destroy() billboard = nil end
-    if connection then connection:Disconnect() connection = nil end
-
-    print("[Desync] Disabled")
 end
 
--- Kill / full reset (X key)
-local function killDesync()
-    disableDesync()
-    lastKnownServerCFrame = CFrame.new()
-    print("[Desync] Killed / reset")
+local function killEverything()
+    desyncActive = false
+    if updateConn then updateConn:Disconnect() end
+    if clientViz then clientViz:Destroy() end
+    if serverViz then serverViz:Destroy() end
+    if clientHighlight then clientHighlight:Destroy() end
+    if serverHighlight then serverHighlight:Destroy() end
+    lastServerCFrame = CFrame.new()
+    lastVelocity = Vector3.new()
+    print("[Kill] Everything reset. Check console for Raknet status:")
+    if raknet then
+        for k,v in pairs(raknet) do
+            print("   raknet." .. tostring(k) .. " = " .. tostring(v))
+        end
+    else
+        print("   No raknet table found")
+    end
 end
 
 -- ────────────────────────────────────────────
--- Toggles
-UserInputService.InputBegan:Connect(function(input, gpe)
-    if gpe then return end
-
+UserInputService.InputBegan:Connect(function(input, processed)
+    if processed then return end
     if input.KeyCode == Enum.KeyCode.Q then
-        if desyncEnabled then
-            disableDesync()
-        else
-            enableDesync()
-        end
+        toggleDesync()
     elseif input.KeyCode == Enum.KeyCode.X then
-        killDesync()
+        killEverything()
     end
 end)
 
--- Auto-update last known server pos (when not desynced)
+-- Auto-baseline when not desynced
 RunService.Heartbeat:Connect(function()
-    if not desyncEnabled then
-        local char = LocalPlayer.Character
-        if char and char.PrimaryPart then
-            lastKnownServerCFrame = char.PrimaryPart.CFrame
+    if not desyncActive then
+        local hrp = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+        if hrp then
+            lastServerCFrame = hrp.CFrame
         end
     end
 end)
 
-print("[RakNet Desync] Loaded")
-print("   Q = Toggle desync + visualizer")
-print("   X = Kill / reset everything")
-print("   Visual: white outline + red fill on estimated server position")
+print("[Desync Visualizer v2] Loaded")
+print("Q = Toggle desync + show visualizers")
+print("X = Kill everything + dump Raknet debug info")
+print("Blue transparent = your local/client position")
+print("Red fill + white outline = estimated server position")
+print("If nothing shows: check character loaded? Executor console for warnings?")
