@@ -7,7 +7,7 @@ local TeleportService = game:GetService("TeleportService")
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 
-local WEBHOOK_URL = "https://discord.com/api/webhooks/1477633171536351303/3ozg7A3gvIgCGqhAfXX8easgjUwmQ8w3HnRiSK9egwjUQweonekyMtVXQgCzP9-_1iuS"
+local WEBHOOK_URL = ""
 
 -- Your brainrot list
 local targets = {
