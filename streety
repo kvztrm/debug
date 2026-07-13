@@ -12,7 +12,6 @@ end
 
 local character, root, humanoid = getCharacter()
 
--- Cleanup
 local function cleanup()
     if root then root.Anchored = false end
     print("🛑 Script killed and cleaned up.")
@@ -34,19 +33,18 @@ end
 
 local function mainLoop()
     while toggle and scriptRunning do
-        character, root, humanoid = getCharacter() -- Refresh every loop
+        character, root, humanoid = getCharacter()
         
         local storages = workspace:FindFirstChild("BasementStorages")
         if not storages then
             print("❌ BasementStorages folder not found!")
-            wait(2)
+            task.wait(2)
             continue
         end
         
         for _, storage in ipairs(storages:GetChildren()) do
             if not (toggle and scriptRunning) then break end
             
-            -- Health safety
             if humanoid.Health < 20 then
                 print("Low health - going to safe spot")
                 teleportTo(safePosition)
@@ -59,34 +57,35 @@ local function mainLoop()
             local handle = door and door:FindFirstChild("Handle")
             
             if handle then
-                print("Processing storage:", storage.Name)
+                print("Processing:", storage.Name)
                 
-                -- Under handle + anchor 2s
+                -- 3 studs under + anchor 2 seconds
                 local underPos = handle.Position - Vector3.new(0, 3, 0)
                 teleportTo(underPos)
                 if root then root.Anchored = true end
-                
                 task.wait(2)
-                
                 if root then root.Anchored = false end
                 
-                -- Open door
+                -- DIRECT teleport to handle (no offset)
                 teleportTo(handle.Position)
                 task.wait(0.3)
                 
                 local prompt = handle:FindFirstChildOfClass("ProximityPrompt")
-                if prompt then firePrompt(prompt) end
+                if prompt then 
+                    firePrompt(prompt) 
+                end
                 task.wait(1)
             end
             
-            -- Loot
+            -- Loot contents
             local contents = storage:FindFirstChild("Contents")
             if contents then
                 for _, obj in ipairs(contents:GetDescendants()) do
-                    if obj:FindFirstChildOfClass("ProximityPrompt") then
+                    local prompt = obj:FindFirstChildOfClass("ProximityPrompt")
+                    if prompt then
                         teleportTo(obj.Position)
                         task.wait(0.3)
-                        firePrompt(obj:FindFirstChildOfClass("ProximityPrompt"))
+                        firePrompt(prompt)
                         task.wait(0.5)
                     end
                 end
@@ -96,7 +95,6 @@ local function mainLoop()
     end
 end
 
--- Keybinds
 game:GetService("UserInputService").InputBegan:Connect(function(input, gp)
     if gp then return end
     if input.KeyCode == Enum.KeyCode.Q then
