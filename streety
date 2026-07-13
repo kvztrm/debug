@@ -1,0 +1,113 @@
+local player = game.Players.LocalPlayer
+local toggle = false
+local scriptRunning = true
+local safePosition = Vector3.new(630, -310, -20)
+
+local function getCharacter()
+    local char = player.Character or player.CharacterAdded:Wait()
+    local root = char:WaitForChild("HumanoidRootPart", 5)
+    local hum = char:WaitForChild("Humanoid", 5)
+    return char, root, hum
+end
+
+local character, root, humanoid = getCharacter()
+
+-- Cleanup
+local function cleanup()
+    if root then root.Anchored = false end
+    print("🛑 Script killed and cleaned up.")
+end
+
+local function firePrompt(prompt)
+    if prompt and prompt:IsA("ProximityPrompt") then
+        prompt:InputHoldBegin()
+        task.wait(0.1)
+        prompt:InputHoldEnd()
+    end
+end
+
+local function teleportTo(pos)
+    if root then
+        root.CFrame = CFrame.new(pos)
+    end
+end
+
+local function mainLoop()
+    while toggle and scriptRunning do
+        character, root, humanoid = getCharacter() -- Refresh every loop
+        
+        local storages = workspace:FindFirstChild("BasementStorages")
+        if not storages then
+            print("❌ BasementStorages folder not found!")
+            wait(2)
+            continue
+        end
+        
+        for _, storage in ipairs(storages:GetChildren()) do
+            if not (toggle and scriptRunning) then break end
+            
+            -- Health safety
+            if humanoid.Health < 20 then
+                print("Low health - going to safe spot")
+                teleportTo(safePosition)
+                if root then root.Anchored = true end
+                task.wait(5)
+                continue
+            end
+            
+            local door = storage:FindFirstChild("Door", true)
+            local handle = door and door:FindFirstChild("Handle")
+            
+            if handle then
+                print("Processing storage:", storage.Name)
+                
+                -- Under handle + anchor 2s
+                local underPos = handle.Position - Vector3.new(0, 3, 0)
+                teleportTo(underPos)
+                if root then root.Anchored = true end
+                
+                task.wait(2)
+                
+                if root then root.Anchored = false end
+                
+                -- Open door
+                teleportTo(handle.Position)
+                task.wait(0.3)
+                
+                local prompt = handle:FindFirstChildOfClass("ProximityPrompt")
+                if prompt then firePrompt(prompt) end
+                task.wait(1)
+            end
+            
+            -- Loot
+            local contents = storage:FindFirstChild("Contents")
+            if contents then
+                for _, obj in ipairs(contents:GetDescendants()) do
+                    if obj:FindFirstChildOfClass("ProximityPrompt") then
+                        teleportTo(obj.Position)
+                        task.wait(0.3)
+                        firePrompt(obj:FindFirstChildOfClass("ProximityPrompt"))
+                        task.wait(0.5)
+                    end
+                end
+            end
+        end
+        task.wait(0.5)
+    end
+end
+
+-- Keybinds
+game:GetService("UserInputService").InputBegan:Connect(function(input, gp)
+    if gp then return end
+    if input.KeyCode == Enum.KeyCode.Q then
+        toggle = not toggle
+        print(toggle and "✅ ENABLED (Q = toggle | X = kill)" or "⏸️ PAUSED")
+        if toggle then spawn(mainLoop) end
+    elseif input.KeyCode == Enum.KeyCode.X then
+        toggle = false
+        scriptRunning = false
+        cleanup()
+    end
+end)
+
+print("Script loaded. Press Q to start | X to kill")
