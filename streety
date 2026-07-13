@@ -25,6 +25,18 @@ local function firePrompt(prompt)
     end
 end
 
+local function getPosition(obj)
+    if obj:IsA("BasePart") then
+        return obj.Position
+    elseif obj.WorldPivot then
+        return obj.WorldPivot.Position
+    elseif obj:IsA("Model") then
+        return obj:GetPivot().Position
+    else
+        return obj.Position or Vector3.new(0,0,0)
+    end
+end
+
 local function teleportTo(pos)
     if root then
         root.CFrame = CFrame.new(pos)
@@ -59,31 +71,30 @@ local function mainLoop()
             if handle then
                 print("Processing:", storage.Name)
                 
-                -- 3 studs under + anchor 2 seconds
-                local underPos = handle.Position - Vector3.new(0, 0, 0)
+                -- Under handle + anchor 2s
+                local underPos = handle.Position - Vector3.new(0, 3, 0)
                 teleportTo(underPos)
                 if root then root.Anchored = true end
                 task.wait(2)
                 if root then root.Anchored = false end
                 
-                -- DIRECT teleport to handle (no offset)
+                -- Direct teleport to handle
                 teleportTo(handle.Position)
                 task.wait(0.3)
                 
                 local prompt = handle:FindFirstChildOfClass("ProximityPrompt")
-                if prompt then 
-                    firePrompt(prompt) 
-                end
+                if prompt then firePrompt(prompt) end
                 task.wait(1)
             end
             
-            -- Loot contents
+            -- Loot contents (now supports WorldPivot)
             local contents = storage:FindFirstChild("Contents")
             if contents then
                 for _, obj in ipairs(contents:GetDescendants()) do
                     local prompt = obj:FindFirstChildOfClass("ProximityPrompt")
                     if prompt then
-                        teleportTo(obj.Position)
+                        local pos = getPosition(obj)
+                        teleportTo(pos)
                         task.wait(0.3)
                         firePrompt(prompt)
                         task.wait(0.5)
@@ -108,4 +119,4 @@ game:GetService("UserInputService").InputBegan:Connect(function(input, gp)
     end
 end)
 
-print("Script loaded. Press Q to start | X to kill")
+print("Script loaded & improved for WorldPivot loot. Press Q to start | X to kill")
