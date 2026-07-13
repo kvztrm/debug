@@ -17,11 +17,10 @@ local function cleanup()
     print("🛑 Script killed and cleaned up.")
 end
 
-local function firePrompt(prompt)
-    if prompt and prompt:IsA("ProximityPrompt") then
-        prompt:InputHoldBegin()
-        task.wait(0.1)
-        prompt:InputHoldEnd()
+local function lookAt(targetPos)
+    if root then
+        local direction = (targetPos - root.Position).Unit
+        root.CFrame = CFrame.lookAt(root.Position, root.Position + direction)
     end
 end
 
@@ -35,6 +34,19 @@ local function getPosition(obj)
     else
         return obj.Position or Vector3.new(0,0,0)
     end
+end
+
+local function firePrompt(prompt, targetPos)
+    if not prompt or not prompt:IsA("ProximityPrompt") then return end
+    
+    lookAt(targetPos)           -- Look at the object
+    task.wait(0.2)              -- Small delay to register look direction
+    
+    prompt:InputHoldBegin()
+    task.wait(0.1)
+    prompt:InputHoldEnd()
+    
+    task.wait(0.5)              -- 0.5 second cooldown after each fire
 end
 
 local function teleportTo(pos)
@@ -65,29 +77,31 @@ local function mainLoop()
                 continue
             end
             
+            -- Door handling
             local door = storage:FindFirstChild("Door", true)
             local handle = door and door:FindFirstChild("Handle")
             
             if handle then
                 print("Processing:", storage.Name)
                 
-                -- Under handle + anchor 2s
-                local underPos = handle.Position - Vector3.new(0, 0, 0)
+                -- Under handle + anchor
+                local underPos = handle.Position - Vector3.new(0, 3, 0)
                 teleportTo(underPos)
                 if root then root.Anchored = true end
                 task.wait(2)
                 if root then root.Anchored = false end
                 
-                -- Direct teleport to handle
+                -- Direct to handle
                 teleportTo(handle.Position)
-                task.wait(0.3)
+                task.wait(0.4)
                 
                 local prompt = handle:FindFirstChildOfClass("ProximityPrompt")
-                if prompt then firePrompt(prompt) end
-                task.wait(1)
+                if prompt then
+                    firePrompt(prompt, handle.Position)
+                end
             end
             
-            -- Loot contents (now supports WorldPivot)
+            -- Loot
             local contents = storage:FindFirstChild("Contents")
             if contents then
                 for _, obj in ipairs(contents:GetDescendants()) do
@@ -95,9 +109,8 @@ local function mainLoop()
                     if prompt then
                         local pos = getPosition(obj)
                         teleportTo(pos)
-                        task.wait(0.3)
-                        firePrompt(prompt)
-                        task.wait(0.5)
+                        task.wait(0.4)
+                        firePrompt(prompt, pos)
                     end
                 end
             end
@@ -119,4 +132,4 @@ game:GetService("UserInputService").InputBegan:Connect(function(input, gp)
     end
 end)
 
-print("Script loaded & improved for WorldPivot loot. Press Q to start | X to kill")
+print("✅ Script updated with look-at + 0.5s cooldown. Press Q to start")
