@@ -60,7 +60,7 @@ local function mainLoop()
                 print("Processing:", storage.Name)
                 
                 -- 3 studs under + anchor 2 seconds
-                local underPos = handle.Position - Vector3.new(0, 3, 0)
+                local underPos = handle.Position - Vector3.new(0, 0, 0)
                 teleportTo(underPos)
                 if root then root.Anchored = true end
                 task.wait(2)
