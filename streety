@@ -38,15 +38,12 @@ end
 
 local function firePrompt(prompt, targetPos)
     if not prompt or not prompt:IsA("ProximityPrompt") then return end
-    
-    lookAt(targetPos)           -- Look at the object
-    task.wait(0.2)              -- Small delay to register look direction
-    
+    lookAt(targetPos)
+    task.wait(0.3)
     prompt:InputHoldBegin()
-    task.wait(0.1)
+    task.wait(0.15)
     prompt:InputHoldEnd()
-    
-    task.wait(0.5)              -- 0.5 second cooldown after each fire
+    task.wait(0.5)  -- cooldown
 end
 
 local function teleportTo(pos)
@@ -77,23 +74,16 @@ local function mainLoop()
                 continue
             end
             
-            -- Door handling
+            -- Door handling (NO ANCHORING)
             local door = storage:FindFirstChild("Door", true)
             local handle = door and door:FindFirstChild("Handle")
             
             if handle then
                 print("Processing:", storage.Name)
                 
-                -- Under handle + anchor
-                local underPos = handle.Position - Vector3.new(0, 0, 0)
-                teleportTo(underPos)
-                if root then root.Anchored = true end
-                task.wait(2)
-                if root then root.Anchored = false end
-                
-                -- Direct to handle
+                -- Direct teleport to handle (no offset, no anchor)
                 teleportTo(handle.Position)
-                task.wait(0.4)
+                task.wait(0.5)   -- give time to settle
                 
                 local prompt = handle:FindFirstChildOfClass("ProximityPrompt")
                 if prompt then
@@ -115,7 +105,7 @@ local function mainLoop()
                 end
             end
         end
-        task.wait(0.5)
+        task.wait(0.6)
     end
 end
 
@@ -132,4 +122,4 @@ game:GetService("UserInputService").InputBegan:Connect(function(input, gp)
     end
 end)
 
-print("✅ Script updated with look-at + 0.5s cooldown. Press Q to start")
+print("✅ No more anchoring on door. Press Q to start")
