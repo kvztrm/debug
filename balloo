@@ -1,0 +1,199 @@
+-- Infinite loop to keep WaterBalloon script modified
+while true do
+    local target = game:GetService("StarterPlayer").StarterCharacterScripts.Throwables.WaterBalloon
+    target.Source = [[
+-- Script Path: game:GetService("StarterPlayer").StarterCharacterScripts.Throwables.WaterBalloon
+
+if not game:IsLoaded() then
+    game.Loaded:Wait()
+end
+task.wait(5)
+
+local player = script.Parent.Parent
+local humanoid = player:FindFirstChildOfClass("Humanoid")
+local rightHand = player:WaitForChild("RightHand")
+local runService = game:GetService("RunService")
+local userInputService = game:GetService("UserInputService")
+local tweenService = game:GetService("TweenService")
+local localPlayer = game:GetService("Players").LocalPlayer
+localPlayer:GetMouse()
+player:WaitForChild("HumanoidRootPart")
+local waterBalloonTemplate = game.ReplicatedStorage:WaitForChild("Misc"):WaitForChild(script.Name)
+local replicationRemote = game.ReplicatedStorage:WaitForChild("Remotes").Replication
+local camera = workspace.CurrentCamera
+local userSettings = UserSettings():GetService("UserGameSettings")
+local animator = humanoid:FindFirstChildWhichIsA("Animator")
+
+for _, obj in ipairs(workspace.Storage:GetChildren()) do
+    if obj.Name == script.Name then
+        obj:Destroy()
+    end
+end
+
+localPlayer.PlayerGui:WaitForChild("Main"):WaitForChild("ThrowBar").Visible = false
+
+local throwProperties = {
+    maxDistance = 7,
+    duration = 0.22,
+    power = 0
+}
+
+local state = {
+    debounce = false,
+    equipped = true,
+    holding = false,
+    readyToThrow = true
+}
+
+local animations = {
+    Idle = animator:LoadAnimation(script.IdleAnim),
+    Throw = animator:LoadAnimation(script.Throw)
+}
+
+player.ChildAdded:Connect(function(child)
+    if child.Name == script.Name then
+        state.equipped = true
+        state.readyToThrow = true
+        animations.Idle:Play()
+        state.equipped = true
+    end
+end)
+
+player.ChildRemoved:Connect(function(child)
+    if child.Name == script.Name then
+        animations.Idle:Stop()
+        state.equipped = false
+        state.equipped = true
+        state.readyToThrow = true
+    end
+end)
+
+userInputService.InputBegan:Connect(function(input, gameProcessed)
+    if not gameProcessed and (not state.debounce and state.equipped) then
+        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch or input.KeyCode == Enum.KeyCode.ButtonR2 then
+            localPlayer.PlayerGui.Main.ThrowBar.Visible = true
+            state.debounce = true
+            state.holding = true
+            state.readyToThrow = true
+            state.equipped = true
+            state.readyToThrow = true
+
+            repeat
+                throwProperties.power = throwProperties.power + 4
+                local fillTween = tweenService:Create(
+                    localPlayer.PlayerGui.Main.ThrowBar.Fill,
+                    TweenInfo.new(0.1),
+                    { Size = UDim2.new(1, 0, math.min(throwProperties.power / 100, 1), 0) }
+                )
+                fillTween:Play()
+                task.wait(0.05)
+            until state.holding == false or throwProperties.power == 100
+
+            task.delay(2, function()
+                state.debounce = false
+            end)
+        end
+    end
+end)
+
+userInputService.InputEnded:Connect(function(input, gameProcessed)
+    if not gameProcessed and state.equipped then
+        state.equipped = true
+        state.readyToThrow = true
+
+        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch or input.KeyCode == Enum.KeyCode.ButtonR2 then
+            state.holding = false
+            if state.readyToThrow and throwProperties.power >= 15 then
+                local power = throwProperties.power
+                throwProperties.power = 0
+                tweenService:Create(localPlayer.PlayerGui.Main.ThrowBar.Fill, TweenInfo.new(0.1), {
+                    Size = UDim2.new(1, 0, 0, 0)
+                }):Play()
+                state.readyToThrow = false
+
+                local startPos = rightHand.Position
+                local targetPos = camera.CFrame.LookVector * 100
+                local velocity = camera.CFrame.LookVector * power * 0.2
+
+                local balloon = waterBalloonTemplate:Clone()
+                balloon.Parent = workspace.Storage
+                balloon.CFrame = rightHand.CFrame
+                balloon.Trail.Enabled = true
+
+                humanoid.CameraOffset = Vector3.new(0, 0, 0)
+                userSettings.RotationType = Enum.RotationType.MovementRelative
+                userInputService.MouseBehavior = Enum.MouseBehavior.Default
+
+                animations.Throw:Play()
+                state.equipped = true
+                state.readyToThrow = true
+
+                replicationRemote:FireServer(script.Name .. "Launch", startPos, targetPos, velocity, throwProperties.duration, throwProperties.maxDistance)
+
+                local impulse
+                if velocity.Magnitude < throwProperties.maxDistance then
+                    local baseVelocity = velocity / throwProperties.duration
+                    local gravityComp = game.Workspace.Gravity * throwProperties.duration * 0.5
+                    impulse = baseVelocity + Vector3.new(0, gravityComp, 0)
+                else
+                    local limitedVelocity = velocity.Unit * throwProperties.maxDistance / throwProperties.duration
+                    local gravityComp = game.Workspace.Gravity * throwProperties.duration * 0.5
+                    impulse = limitedVelocity + Vector3.new(0, gravityComp, 0)
+                end
+                balloon:ApplyImpulse(impulse)
+
+                local renderConnection
+                local hasTimedOut = false
+                renderConnection = runService.RenderStepped:Connect(function()
+                    local rayParams = RaycastParams.new()
+                    rayParams.FilterType = Enum.RaycastFilterType.Exclude
+                    rayParams.FilterDescendantsInstances = { player, balloon, workspace.Storage, workspace.Zones }
+
+                    local rayResult = workspace:Raycast(balloon.Position, impulse.Unit * 3 + Vector3.new(0, -3, 0), rayParams)
+                    if rayResult then
+                        renderConnection:Disconnect()
+                        balloon:Destroy()
+                        replicationRemote:FireServer(script.Name .. "Hit", rayResult.Instance, rayResult.Position, rayResult.Normal, impulse)
+
+                        local hitModel = rayResult.Instance:FindFirstAncestorWhichIsA("Model")
+                        if hitModel and hitModel:FindFirstChild("Humanoid") then
+                            local highlight = Instance.new("Highlight")
+                            highlight.OutlineTransparency = 0.8
+                            highlight.FillTransparency = 1
+                            highlight.Adornee = rayResult.Instance
+                            highlight.Parent = player
+                            tweenService:Create(highlight, TweenInfo.new(0.15), { FillTransparency = 0.2 }):Play()
+                            task.delay(0.15, function()
+                                if highlight then
+                                    tweenService:Create(highlight, TweenInfo.new(0.15), { FillTransparency = 1 }):Play()
+                                end
+                            end)
+                            task.delay(0.3, function()
+                                if highlight then
+                                    highlight:Destroy()
+                                end
+                            end)
+                            return
+                        end
+                    elseif not hasTimedOut then
+                        hasTimedOut = true
+                        task.delay(3, function()
+                            balloon:Destroy()
+                            renderConnection:Disconnect()
+                        end)
+                    end
+                end)
+            else
+                throwProperties.power = 0
+                tweenService:Create(localPlayer.PlayerGui.Main.ThrowBar.Fill, TweenInfo.new(0.1), {
+                    Size = UDim2.new(1, 0, 0, 0)
+                }):Play()
+            end
+            task.wait(0.1)
+            localPlayer.PlayerGui.Main.ThrowBar.Visible = false
+        end
+    end
+end)
+]]
+    task.wait(1) -- prevents crashing; re‑applies every second
+end
