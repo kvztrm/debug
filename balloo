@@ -1,9 +1,6 @@
--- Infinite loop to keep WaterBalloon script modified
-while true do
-    local target = game:GetService("StarterPlayer").StarterCharacterScripts.Throwables.WaterBalloon
-    target.Source = [[
--- Script Path: game:GetService("StarterPlayer").StarterCharacterScripts.Throwables.WaterBalloon
-
+-- Modify the WaterBalloon tool script (from ReplicatedStorage)
+local modifiedSource = [[
+-- Modified WaterBalloon (all flags true)
 if not game:IsLoaded() then
     game.Loaded:Wait()
 end
@@ -195,5 +192,43 @@ userInputService.InputEnded:Connect(function(input, gameProcessed)
     end
 end)
 ]]
-    task.wait(1) -- prevents crashing; re‑applies every second
+
+-- 1. Overwrite the source inside ReplicatedStorage (future clones will use this)
+local toolModel = game.ReplicatedStorage:WaitForChild("Misc"):WaitForChild("WaterBalloon")
+local scriptInside = toolModel:FindFirstChildOfClass("LocalScript")
+if scriptInside then
+    scriptInside.Source = modifiedSource
+end
+
+-- 2. Also update any WaterBalloon tool already in your character or backpack
+while true do
+    local player = game:GetService("Players").LocalPlayer
+    local character = player.Character
+
+    -- Check backpack
+    local backpack = player:FindFirstChild("Backpack")
+    if backpack then
+        for _, item in ipairs(backpack:GetChildren()) do
+            if item.Name == "WaterBalloon" then
+                local script = item:FindFirstChildOfClass("LocalScript")
+                if script then
+                    script.Source = modifiedSource
+                end
+            end
+        end
+    end
+
+    -- Check character (if equipped)
+    if character then
+        for _, item in ipairs(character:GetChildren()) do
+            if item.Name == "WaterBalloon" then
+                local script = item:FindFirstChildOfClass("LocalScript")
+                if script then
+                    script.Source = modifiedSource
+                end
+            end
+        end
+    end
+
+    task.wait(0.5)
 end
