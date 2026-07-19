@@ -38,11 +38,14 @@ local function getLootPosition(loot)
 	return nil
 end
 
-local function findProximityPrompt(obj)
-	if obj:IsA("ProximityPrompt") then return obj end
+-- Find the actual part that holds the ProximityPrompt
+local function findProximityPromptPart(obj)
+	if obj:IsA("BasePart") and obj:FindFirstChildWhichIsA("ProximityPrompt") then
+		return obj
+	end
 	for _, child in ipairs(obj:GetChildren()) do
-		local found = findProximityPrompt(child)
-		if found then return found end
+		local result = findProximityPromptPart(child)
+		if result then return result end
 	end
 	return nil
 end
@@ -64,39 +67,6 @@ local function faceHorizontally(targetPos, root)
 	local hDir = Vector3.new(dir.X, 0, dir.Z)
 	if hDir.Magnitude < 0.01 then hDir = Vector3.new(0, 0, -1) end
 	return CFrame.lookAt(root.Position, root.Position + hDir)
-end
-
--- Instant prompt firing: repeatedly begin/end until item collected
-local function instantFireProximityPrompt(obj)
-	local prompt = findProximityPrompt(obj)
-	if not prompt then return end
-	while obj and obj:IsDescendantOf(workspace) do
-		prompt:InputHoldBegin()
-		prompt:InputHoldEnd()
-		task.wait(0.05)  -- tiny gap between attempts
-	end
-end
-
--- Loot collection with instant fire and 0.5 stud offset
-local function collectLootItem(loot, lootFolder)
-	local prompt = findProximityPrompt(loot)
-	if not prompt then return end
-	-- Move 0.5 studs above
-	local lootPos = getLootPosition(loot)
-	if not lootPos then return end
-	local abovePos = lootPos + Vector3.new(0, 0.5, 0)
-	local root = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
-	if not root then return end
-	local cf = faceHorizontally(abovePos, root)
-	cf = cf - cf.Position + abovePos
-	tweenToCFrame(cf)
-
-	-- Rapid‑fire until the item leaves the folder
-	while loot and loot:IsDescendantOf(lootFolder) do
-		prompt:InputHoldBegin()
-		prompt:InputHoldEnd()
-		task.wait(0.05)
-	end
 end
 
 -- References
@@ -156,16 +126,15 @@ while true do
 		cframe = cframe - cframe.Position + targetPos
 		rootPart.CFrame = cframe
 
+		-- Wait 0.5 seconds, then fire handle prompt instantly
 		task.wait(0.5)
 		if not rootPart or humanoid.Health <= 0 then break end
-
-		-- Fire door handle prompt instantly
-		local doorPrompt = handle:FindFirstChild("ProximityPrompt")
-		if doorPrompt then
-			doorPrompt:InputHoldBegin()
-			doorPrompt:InputHoldEnd()
+		local promptPart = findProximityPromptPart(handle)
+		if promptPart then
+			fireproximityprompt(promptPart)   -- Dex method
 		end
 
+		-- Wait for door/loot to appear
 		task.wait(1.5)
 		if not rootPart or humanoid.Health <= 0 then break end
 
@@ -176,7 +145,7 @@ while true do
 			if lootFolder then
 				local lootItems = lootFolder:GetChildren()
 				if #lootItems > 0 then
-					-- Sort top-down so upper items are collected first
+					-- Sort top-down
 					table.sort(lootItems, function(a, b)
 						local posA = getLootPosition(a)
 						local posB = getLootPosition(b)
@@ -187,7 +156,24 @@ while true do
 
 					for _, loot in ipairs(lootItems) do
 						if not rootPart or humanoid.Health <= 0 then break end
-						collectLootItem(loot, lootFolder)
+						local lootPos = getLootPosition(loot)
+						if not lootPos then continue end
+						
+						-- Tween 0.5 studs above the item
+						local abovePos = lootPos + Vector3.new(0, 0.5, 0)
+						local cf = faceHorizontally(abovePos, rootPart)
+						cf = cf - cf.Position + abovePos
+						tweenToCFrame(cf)
+
+						-- Fire the loot prompt instantly, retry up to 3 times
+						local lootPromptPart = findProximityPromptPart(loot)
+						if lootPromptPart then
+							for attempt = 1, 3 do
+								fireproximityprompt(lootPromptPart)
+								task.wait(0.1)
+								if not loot:IsDescendantOf(lootFolder) then break end
+							end
+						end
 						task.wait(0.1)
 					end
 				else
@@ -235,5 +221,5 @@ while true do
 
 		task.wait(0.1)
 	end
-	-- No waiting – instantly start the next cycle
+	-- Instant restart
 end
