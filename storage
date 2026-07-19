@@ -1,101 +1,73 @@
-local player = game:GetService("Players").LocalPlayer
+local Players = game:GetService("Players")
 local TweenService = game:GetService("TweenService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
+local player = Players.LocalPlayer
 local basementStorages = workspace:FindFirstChild("BasementStorages")
 if not basementStorages then warn("BasementStorages not found") return end
 
--- All Door.Handle parts (collected once)
 local handles = {}
 for _, child in ipairs(basementStorages:GetChildren()) do
     local door = child:FindFirstChild("Door")
     if door then
         local handle = door:FindFirstChild("Handle")
-        if handle and handle:IsA("BasePart") then
-            table.insert(handles, handle)
-        end
+        if handle and handle:IsA("BasePart") then table.insert(handles, handle) end
     end
 end
 if #handles == 0 then warn("No handles found") return end
-print("Found " .. #handles .. " handles. Script running...")
+print("Found " .. #handles .. " handles. Running...")
 
--- Helpers
 local function getMobPosition(mob)
-    if mob:IsA("Model") then
-        if mob.PrimaryPart then return mob.PrimaryPart.Position end
-        local p = mob:FindFirstChildWhichIsA("BasePart")
-        if p then return p.Position end
-    elseif mob:IsA("BasePart") then return mob.Position end
-    return nil
+    return mob.PrimaryPart and mob.PrimaryPart.Position or mob:FindFirstChildWhichIsA("BasePart") and mob:FindFirstChildWhichIsA("BasePart").Position
 end
 
 local function getLootPosition(loot)
-    if loot:IsA("Model") then
-        if loot.PrimaryPart then return loot.PrimaryPart.Position end
-        local p = loot:FindFirstChildWhichIsA("BasePart")
-        if p then return p.Position end
-    elseif loot:IsA("BasePart") then return loot.Position end
-    return nil
+    return loot.PrimaryPart and loot.PrimaryPart.Position or loot:FindFirstChildWhichIsA("BasePart") and loot:FindFirstChildWhichIsA("BasePart").Position
 end
 
-local function findProximityPrompt(obj)
+local function findPrompt(obj)
     if obj:IsA("ProximityPrompt") then return obj end
-    for _, child in ipairs(obj:GetChildren()) do
-        local found = findProximityPrompt(child)
+    for _, c in ipairs(obj:GetChildren()) do
+        local found = findPrompt(c)
         if found then return found end
     end
     return nil
 end
 
-local function tweenToCFrame(targetCFrame)
+local function tweenToPos(targetPos)
     local root = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
     if not root then return end
-    local distance = (targetCFrame.Position - root.Position).Magnitude
-    local duration = distance / 100
-    local info = TweenInfo.new(duration, Enum.EasingStyle.Linear, Enum.EasingDirection.InOut, 0, false, 0)
-    local tween = TweenService:Create(root, info, {CFrame = targetCFrame})
+    local dist = (targetPos - root.Position).Magnitude
+    local dur = dist / 100
+    local info = TweenInfo.new(dur, Enum.EasingStyle.Linear, Enum.EasingDirection.InOut)
+    local tween = TweenService:Create(root, info, {CFrame = CFrame.new(targetPos)})
     tween:Play()
     tween.Completed:Wait()
 end
 
-local function faceHorizontally(targetPos, root)
-    if not root then return CFrame.new(targetPos) end
-    local dir = targetPos - root.Position
-    local hDir = Vector3.new(dir.X, 0, dir.Z)
-    if hDir.Magnitude < 0.01 then hDir = Vector3.new(0, 0, -1) end
-    return CFrame.lookAt(root.Position, root.Position + hDir)
-end
-
--- Collect a single loot item (proper hold, up to 5 retries)
 local function collectLootItem(loot, lootFolder)
-    local prompt = findProximityPrompt(loot)
+    local prompt = findPrompt(loot)
     if not prompt then return false end
     for _ = 1, 5 do
         prompt:InputHoldBegin()
         task.wait(prompt.HoldDuration + 0.1)
         prompt:InputHoldEnd()
         task.wait(0.05)
-        if not loot:IsDescendantOf(lootFolder) then
-            return true
-        end
+        if not loot:IsDescendantOf(lootFolder) then return true end
     end
     return false
 end
 
--- References
 local mobsFolder = workspace:FindFirstChild("Mobs")
 local npcModel = workspace.NPC and workspace.NPC:FindFirstChild("Storage Collector")
 local sellEvent = ReplicatedStorage:FindFirstChild("Remotes") and ReplicatedStorage.Remotes:FindFirstChild("RemoteEvent")
 if not sellEvent then warn("RemoteEvent not found") end
-if not npcModel then warn("NPC 'Storage Collector' not found – selling will not work!") end
 
 local storages = workspace:FindFirstChild("Storages")
 local safeModel = storages and storages:GetChildren()[2] and storages:GetChildren()[2]:FindFirstChild("Contents") and storages:GetChildren()[2].Contents:FindFirstChild("Objects") and storages:GetChildren()[2].Contents.Objects:FindFirstChild("Safe")
 local safeBox = safeModel and safeModel:FindFirstChild("Base") and safeModel.Base:FindFirstChild("Box")
-
 local backpack = player:WaitForChild("Backpack")
 
--- Sells everything except Shotgun Ammo Pack
 local function sellAll()
     if not npcModel or not sellEvent then return end
     local root = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
@@ -103,9 +75,7 @@ local function sellAll()
     local special = backpack:FindFirstChild("Shotgun Ammo Pack")
     local toSell = {}
     for _, tool in ipairs(backpack:GetChildren()) do
-        if tool:IsA("Tool") and tool ~= special then
-            table.insert(toSell, tool)
-        end
+        if tool:IsA("Tool") and tool ~= special then table.insert(toSell, tool) end
     end
     if #toSell > 0 then
         print("Selling " .. #toSell .. " items...")
@@ -118,7 +88,6 @@ local function sellAll()
     end
 end
 
--- Store Shotgun Ammo Pack in safe (after selling)
 local function storeSpecial()
     local special = backpack:FindFirstChild("Shotgun Ammo Pack")
     if special and safeBox and safeModel then
@@ -128,9 +97,7 @@ local function storeSpecial()
         if not humanoid then return end
         print("Storing Shotgun Ammo Pack...")
         local boxPos = safeBox.Position + Vector3.new(0, 2, 0)
-        local cf = faceHorizontally(safeBox.Position, root)
-        cf = cf - cf.Position + boxPos
-        root.CFrame = cf
+        root.CFrame = CFrame.new(boxPos)
         task.wait(0.3)
         humanoid:EquipTool(special)
         task.wait(0.5)
@@ -139,124 +106,69 @@ local function storeSpecial()
     end
 end
 
--- Main loop
 while true do
-    -- Wait for a living character
     local char = player.Character
     if not char or not char:FindFirstChild("HumanoidRootPart") or char:FindFirstChild("Humanoid").Health <= 0 then
         player.CharacterAdded:Wait()
         task.wait(1)
     end
     char = player.Character
-    local rootPart = char and char:FindFirstChild("HumanoidRootPart")
-    local humanoid = char and char:FindFirstChild("Humanoid")
-    if not rootPart or not humanoid then
-        task.wait(0.5)
-        continue
-    end
+    local root = char:FindFirstChild("HumanoidRootPart")
+    local humanoid = char:FindFirstChild("Humanoid")
+    if not root or not humanoid then continue end
 
-    -- Sell any leftover items from a previous life
     sellAll()
-
-    -- Track opened storages for this cycle
     local opened = {}
     for _ = 1, #handles do table.insert(opened, false) end
 
-    -- Go through all storages
     for i, handle in ipairs(handles) do
         if opened[i] then continue end
-        -- Check if player died
-        if not player.Character or not player.Character:FindFirstChild("HumanoidRootPart") or player.Character:FindFirstChild("Humanoid").Health <= 0 then
-            print("Died during run, restarting cycle...")
-            break
-        end
-        rootPart = player.Character.HumanoidRootPart
-        humanoid = player.Character.Humanoid
+        if not player.Character or player.Character:FindFirstChild("Humanoid").Health <= 0 then break end
 
-        -- Mob skip
         local skip = false
         if mobsFolder then
             for _, mob in ipairs(mobsFolder:GetChildren()) do
                 local mobPos = getMobPosition(mob)
-                if mobPos and (mobPos - handle.Position).Magnitude <= 80 then
-                    skip = true
-                    print("Storage " .. i .. " skipped – mob too close (" .. mob.Name .. ")")
-                    break
-                end
+                if mobPos and (mobPos - handle.Position).Magnitude <= 80 then skip = true; break end
             end
         end
         if skip then continue end
 
-        -- Teleport to handle (2 studs above)
-        print("Opening storage " .. i)
-        local targetPos = handle.Position + Vector3.new(0, 2, 0)
-        local cframe = faceHorizontally(handle.Position, rootPart)
-        cframe = cframe - cframe.Position + targetPos
-        rootPart.CFrame = cframe
-
+        root.CFrame = CFrame.new(handle.Position + Vector3.new(0, 2, 0))
         task.wait(0.5)
-        if not rootPart or humanoid.Health <= 0 then break end
 
-        -- Open the door (proper hold)
         local doorPrompt = handle:FindFirstChild("ProximityPrompt")
         if doorPrompt then
             doorPrompt:InputHoldBegin()
             task.wait(doorPrompt.HoldDuration + 0.1)
             doorPrompt:InputHoldEnd()
         end
-
         task.wait(1.5)
-        if not rootPart or humanoid.Health <= 0 then break end
 
-        -- Loot
-        local lootedSomething = false
-        local storageObject = handle.Parent and handle.Parent.Parent
-        if storageObject then
-            local lootFolder = storageObject:FindFirstChild("Contents") and storageObject.Contents:FindFirstChild("Loot")
-            if lootFolder then
-                local lootItems = lootFolder:GetChildren()
-                if #lootItems > 0 then
-                    -- Sort top‑down so upper items are collected first
-                    table.sort(lootItems, function(a, b)
-                        local posA = getLootPosition(a)
-                        local posB = getLootPosition(b)
-                        if posA and posB then return posA.Y > posB.Y end
-                        return false
-                    end)
-                    print("Found " .. #lootItems .. " loot items.")
-                    for _, loot in ipairs(lootItems) do
-                        if not rootPart or humanoid.Health <= 0 then break end
-                        local lootPos = getLootPosition(loot)
-                        if lootPos then
-                            -- Tween to 0.5 studs above the item
-                            local abovePos = lootPos + Vector3.new(0, 0.5, 0)
-                            local cf = faceHorizontally(abovePos, rootPart)
-                            cf = cf - cf.Position + abovePos
-                            tweenToCFrame(cf)
-                            -- Collect it
-                            if collectLootItem(loot, lootFolder) then
-                                print("Collected: " .. loot.Name)
-                                lootedSomething = true
-                            else
-                                warn("Failed: " .. loot.Name)
-                            end
-                            task.wait(0.2)
-                        end
+        local lootFolder = handle.Parent.Parent and handle.Parent.Parent:FindFirstChild("Contents") and handle.Parent.Parent.Contents:FindFirstChild("Loot")
+        if lootFolder then
+            local lootItems = lootFolder:GetChildren()
+            table.sort(lootItems, function(a, b) 
+                local pa = getLootPosition(a)
+                local pb = getLootPosition(b)
+                return pa and pb and pa.Y > pb.Y
+            end)
+
+            for _, loot in ipairs(lootItems) do
+                if not player.Character or player.Character:FindFirstChild("Humanoid").Health <= 0 then break end
+                local lootPos = getLootPosition(loot)
+                if lootPos then
+                    tweenToPos(lootPos + Vector3.new(0, 0.5, 0))
+                    if collectLootItem(loot, lootFolder) then
+                        print("Collected: " .. loot.Name)
                     end
-                else
-                    print("No loot here.")
+                    task.wait(0.2)
                 end
             end
         end
 
-        -- Only sell if we actually picked something up
-        if lootedSomething then
-            sellAll()
-            storeSpecial()
-        end
-
+        if lootFolder then sellAll(); storeSpecial() end
         opened[i] = true
         task.wait(0.2)
     end
-    -- Cycle complete – instantly restart
 end
