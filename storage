@@ -66,17 +66,17 @@ local function faceHorizontally(targetPos, root)
     return CFrame.lookAt(root.Position, root.Position + hDir)
 end
 
--- Properly complete a ProximityPrompt hold (fixes inventory + invincibility)
+-- Proper prompt hold (fixes inventory + invincibility)
 local function collectLootItem(loot, lootFolder)
     local prompt = findProximityPrompt(loot)
     if not prompt then return false end
     for attempts = 1, 5 do
         prompt:InputHoldBegin()
-        task.wait(prompt.HoldDuration + 0.1)  -- hold time + tiny buffer
+        task.wait(prompt.HoldDuration + 0.1)
         prompt:InputHoldEnd()
         task.wait(0.05)
         if not loot:IsDescendantOf(lootFolder) then
-            return true  -- item collected
+            return true
         end
     end
     return false
@@ -84,7 +84,9 @@ end
 
 -- References
 local mobsFolder = workspace:FindFirstChild("Mobs")
-local npcModel = workspace.NPC and workspace.NPC:GetChildren()[3]
+
+-- *** FIX: Use the NPC's exact name "Storage Collector" ***
+local npcModel = workspace.NPC and workspace.NPC:FindFirstChild("Storage Collector")
 local npcHead = npcModel and npcModel:FindFirstChild("Head")
 local sellEvent = ReplicatedStorage:FindFirstChild("Remotes") and ReplicatedStorage.Remotes:FindFirstChild("RemoteEvent")
 if not sellEvent then warn("RemoteEvent not found") end
@@ -95,7 +97,7 @@ local safeBox = safeModel and safeModel:FindFirstChild("Base") and safeModel.Bas
 
 local backpack = player:WaitForChild("Backpack")
 
--- Outer infinite loop – restarts from first storage after death
+-- Outer infinite loop – instantly restarts after each cycle
 while true do
     -- Wait for a living character
     local char = player.Character
@@ -154,7 +156,6 @@ while true do
             if lootFolder then
                 local lootItems = lootFolder:GetChildren()
                 if #lootItems > 0 then
-                    -- Sort top-down so upper items are collected first
                     table.sort(lootItems, function(a, b)
                         local posA = getLootPosition(a)
                         local posB = getLootPosition(b)
@@ -167,13 +168,11 @@ while true do
                         if not rootPart or humanoid.Health <= 0 then break end
                         local lootPos = getLootPosition(loot)
                         if lootPos then
-                            -- Tween to 0.5 studs above to avoid collision
                             local abovePos = lootPos + Vector3.new(0, 0.5, 0)
                             local cf = faceHorizontally(abovePos, rootPart)
                             cf = cf - cf.Position + abovePos
                             tweenToCFrame(cf)
 
-                            -- Properly hold the prompt until collected
                             local collected = collectLootItem(loot, lootFolder)
                             if collected then
                                 print("Collected: " .. loot.Name)
@@ -189,17 +188,19 @@ while true do
             end
         end
 
-        -- Skip selling if dead
+        -- Sell everything except Shotgun Ammo Pack
         if not rootPart or humanoid.Health <= 0 then break end
 
-        -- Sell everything except Shotgun Ammo Pack
         local special = backpack:FindFirstChild("Shotgun Ammo Pack")
         local toSell = {}
         for _, tool in ipairs(backpack:GetChildren()) do
-            if tool:IsA("Tool") and tool ~= special then table.insert(toSell, tool) end
+            if tool:IsA("Tool") and tool ~= special then
+                table.insert(toSell, tool)
+            end
         end
+
         if #toSell > 0 and npcHead and sellEvent then
-            print("Teleporting to NPC to sell...")
+            print("Teleporting to NPC (" .. npcModel.Name .. ") to sell " .. #toSell .. " tools...")
             local npcPos = npcHead.Position
             local cf = faceHorizontally(npcPos, rootPart)
             cf = cf - cf.Position + npcPos
@@ -210,9 +211,11 @@ while true do
                 sellEvent:FireServer("SellItem", tool.Name, npcModel)
                 print("Sold: " .. tool.Name)
             end
+        else
+            if #toSell == 0 then print("No non‑special tools to sell.") end
         end
 
-        -- Store Shotgun Ammo Pack in safe
+        -- Store Shotgun Ammo Pack
         if special and safeBox and safeModel and rootPart and humanoid.Health > 0 then
             print("Shotgun Ammo Pack detected – storing in safe...")
             local boxPos = safeBox.Position + Vector3.new(0, 2, 0)
@@ -228,6 +231,5 @@ while true do
 
         task.wait(0.2)
     end
-
-    -- Cycle instantly restarts – no wait here anymore
+    -- No wait – instantly start next cycle
 end
