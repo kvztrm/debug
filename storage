@@ -22,7 +22,7 @@ local function getMobPosition(mob)
 end
 
 local function getLootPosition(loot)
-    return loot.PrimaryPart and loot.PrimaryPart.Position or loot:FindFirstChildWhichIsA("BasePart") and loot:FindFirstChildWhichIsA("BasePart").Position
+    return loot.PrimaryPart and loot.PrimaryPart.Position or loot:FindFirstChildWhichIsA("BasePart") or loot:FindFirstChild("Mesh") and loot.Mesh.Position or loot:FindFirstChildWhichIsA("BasePart") and loot:FindFirstChildWhichIsA("BasePart").Position
 end
 
 local function findPrompt(obj)
