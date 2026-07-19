@@ -19,7 +19,7 @@ end
 if #handles == 0 then warn("No handles found") return end
 print("Found " .. #handles .. " handles. Looping forever...")
 
--- Helper functions
+-- Helpers
 local function getMobPosition(mob)
     if mob:IsA("Model") then
         if mob.PrimaryPart then return mob.PrimaryPart.Position end
@@ -66,11 +66,10 @@ local function faceHorizontally(targetPos, root)
     return CFrame.lookAt(root.Position, root.Position + hDir)
 end
 
--- Proper ProximityPrompt hold (fixes inventory + invincibility)
 local function collectLootItem(loot, lootFolder)
     local prompt = findProximityPrompt(loot)
     if not prompt then return false end
-    for attempts = 1, 5 do
+    for _ = 1, 5 do
         prompt:InputHoldBegin()
         task.wait(prompt.HoldDuration + 0.1)
         prompt:InputHoldEnd()
@@ -95,7 +94,30 @@ local safeBox = safeModel and safeModel:FindFirstChild("Base") and safeModel.Bas
 
 local backpack = player:WaitForChild("Backpack")
 
--- Outer infinite loop – restarts fresh character / queue after death
+-- Helper to sell all non‑special tools from backpack (used at start and after looting)
+local function sellBackpackItems()
+    if not npcModel or not sellEvent then return end
+    local special = backpack:FindFirstChild("Shotgun Ammo Pack")
+    local toSell = {}
+    for _, tool in ipairs(backpack:GetChildren()) do
+        if tool:IsA("Tool") and tool ~= special then
+            table.insert(toSell, tool)
+        end
+    end
+    if #toSell > 0 then
+        local root = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
+        if not root then return end
+        print("Selling " .. #toSell .. " items at (-677, 10, 12)...")
+        root.CFrame = CFrame.new(-677, 10, 12)
+        task.wait(0.5)
+        for _, tool in ipairs(toSell) do
+            sellEvent:FireServer("SellItem", tool.Name, npcModel)
+            print("Sold: " .. tool.Name)
+        end
+    end
+end
+
+-- Outer infinite loop
 while true do
     -- Wait for a living character
     local char = player.Character
@@ -111,14 +133,15 @@ while true do
         continue
     end
 
-    -- Build a queue of all handles for this cycle
-    local remaining = {}
-    for i, h in ipairs(handles) do
-        table.insert(remaining, {index = i, handle = h})
-    end
+    -- SELL ANY LEFTOVER ITEMS FROM PREVIOUS LIFE / CYCLE
+    sellBackpackItems()
 
-    -- Process handles one by one, removing them after success
-    while #remaining > 0 do
+    -- Track which storages have been opened in this cycle
+    local opened = {}
+    for _ = 1, #handles do opened[_] = false end
+
+    -- Process storages in order
+    for i, handle in ipairs(handles) do
         if not player.Character or not player.Character:FindFirstChild("HumanoidRootPart") or player.Character:FindFirstChild("Humanoid").Health <= 0 then
             print("Died during cycle. Restarting...")
             break
@@ -126,137 +149,105 @@ while true do
         rootPart = player.Character.HumanoidRootPart
         humanoid = player.Character.Humanoid
 
-        local processedAny = false
-        for _ = 1, #remaining do
-            local data = remaining[1]
-            table.remove(remaining, 1)   -- tentatively remove, may put back if skipped
-            local i = data.index
-            local handle = data.handle
+        if opened[i] then continue end   -- already opened
 
-            -- Check life
-            if not rootPart or humanoid.Health <= 0 then
-                -- Put back? No, we'll break outer
-                break
-            end
-
-            -- Mob skip (80 studs)
-            local skip = false
-            if mobsFolder then
-                for _, mob in ipairs(mobsFolder:GetChildren()) do
-                    local mobPos = getMobPosition(mob)
-                    if mobPos and (mobPos - handle.Position).Magnitude <= 80 then
-                        skip = true
-                        print("Handle " .. i .. " skipped – mob within 80 studs (" .. mob.Name .. ")")
-                        break
-                    end
+        -- Mob skip (80 studs)
+        local skip = false
+        if mobsFolder then
+            for _, mob in ipairs(mobsFolder:GetChildren()) do
+                local mobPos = getMobPosition(mob)
+                if mobPos and (mobPos - handle.Position).Magnitude <= 80 then
+                    skip = true
+                    print("Handle " .. i .. " skipped – mob within 80 studs (" .. mob.Name .. ")")
+                    break
                 end
             end
+        end
+        if skip then continue end
 
-            if skip then
-                -- Put back at the end of the queue to try later
-                table.insert(remaining, data)
-            else
-                -- Process this handle
-                print("Processing handle " .. i)
-                local targetPos = handle.Position + Vector3.new(0, 2, 0)
-                local cframe = faceHorizontally(handle.Position, rootPart)
-                cframe = cframe - cframe.Position + targetPos
-                rootPart.CFrame = cframe
+        print("Teleporting to handle " .. i)
+        local targetPos = handle.Position + Vector3.new(0, 2, 0)
+        local cframe = faceHorizontally(handle.Position, rootPart)
+        cframe = cframe - cframe.Position + targetPos
+        rootPart.CFrame = cframe
 
-                task.wait(0.5)
-                if not rootPart or humanoid.Health <= 0 then break end
-                local prompt = handle:FindFirstChild("ProximityPrompt")
-                if prompt then prompt:InputHoldBegin() end
+        task.wait(0.5)
+        if not rootPart or humanoid.Health <= 0 then break end
 
-                task.wait(1.5)
-                if not rootPart or humanoid.Health <= 0 then break end
+        -- Open door
+        local prompt = handle:FindFirstChild("ProximityPrompt")
+        if prompt then
+            prompt:InputHoldBegin()
+            task.wait(prompt.HoldDuration + 0.1)   -- finish the hold properly
+            prompt:InputHoldEnd()
+        end
 
-                -- Loot collection
-                local storageObject = handle.Parent and handle.Parent.Parent
-                if storageObject then
-                    local lootFolder = storageObject:FindFirstChild("Contents") and storageObject.Contents:FindFirstChild("Loot")
-                    if lootFolder then
-                        local lootItems = lootFolder:GetChildren()
-                        if #lootItems > 0 then
-                            table.sort(lootItems, function(a, b)
-                                local posA = getLootPosition(a)
-                                local posB = getLootPosition(b)
-                                if posA and posB then return posA.Y > posB.Y end
-                                return false
-                            end)
-                            print("Loot: " .. #lootItems .. " items. Tweening...")
-                            for _, loot in ipairs(lootItems) do
-                                if not rootPart or humanoid.Health <= 0 then break end
-                                local lootPos = getLootPosition(loot)
-                                if lootPos then
-                                    local abovePos = lootPos + Vector3.new(0, 0.5, 0)
-                                    local cf = faceHorizontally(abovePos, rootPart)
-                                    cf = cf - cf.Position + abovePos
-                                    tweenToCFrame(cf)
-                                    local collected = collectLootItem(loot, lootFolder)
-                                    if collected then
-                                        print("Collected: " .. loot.Name)
-                                    else
-                                        warn("Failed to collect: " .. loot.Name)
-                                    end
-                                    task.wait(0.2)
-                                end
+        task.wait(1.5)
+        if not rootPart or humanoid.Health <= 0 then break end
+
+        -- Loot collection
+        local lootedSomething = false
+        local storageObject = handle.Parent and handle.Parent.Parent
+        if storageObject then
+            local lootFolder = storageObject:FindFirstChild("Contents") and storageObject.Contents:FindFirstChild("Loot")
+            if lootFolder then
+                local lootItems = lootFolder:GetChildren()
+                if #lootItems > 0 then
+                    table.sort(lootItems, function(a, b)
+                        local posA = getLootPosition(a)
+                        local posB = getLootPosition(b)
+                        if posA and posB then return posA.Y > posB.Y end
+                        return false
+                    end)
+                    print("Loot: " .. #lootItems .. " items. Collecting...")
+
+                    for _, loot in ipairs(lootItems) do
+                        if not rootPart or humanoid.Health <= 0 then break end
+                        local lootPos = getLootPosition(loot)
+                        if lootPos then
+                            local abovePos = lootPos + Vector3.new(0, 0.5, 0)
+                            local cf = faceHorizontally(abovePos, rootPart)
+                            cf = cf - cf.Position + abovePos
+                            tweenToCFrame(cf)
+
+                            local collected = collectLootItem(loot, lootFolder)
+                            if collected then
+                                print("Collected: " .. loot.Name)
+                                lootedSomething = true
+                            else
+                                warn("Failed to collect: " .. loot.Name)
                             end
-                        else
-                            print("No loot in this storage.")
+                            task.wait(0.2)
                         end
                     end
+                else
+                    print("No loot in this storage.")
                 end
-
-                -- Skip selling if dead
-                if not rootPart or humanoid.Health <= 0 then break end
-
-                -- Sell everything except Shotgun Ammo Pack
-                local special = backpack:FindFirstChild("Shotgun Ammo Pack")
-                local toSell = {}
-                for _, tool in ipairs(backpack:GetChildren()) do
-                    if tool:IsA("Tool") and tool ~= special then
-                        table.insert(toSell, tool)
-                    end
-                end
-
-                if #toSell > 0 and npcModel and sellEvent then
-                    print("Teleporting to sell point (-677, 10, 12)...")
-                    rootPart.CFrame = CFrame.new(-677, 10, 12)
-                    task.wait(0.5)
-                    for _, tool in ipairs(toSell) do
-                        if not rootPart or humanoid.Health <= 0 then break end
-                        sellEvent:FireServer("SellItem", tool.Name, npcModel)
-                        print("Sold: " .. tool.Name)
-                    end
-                elseif #toSell > 0 and not npcModel then
-                    warn("Cannot sell – NPC model not found")
-                end
-
-                -- Store Shotgun Ammo Pack
-                if special and safeBox and safeModel and rootPart and humanoid.Health > 0 then
-                    print("Shotgun Ammo Pack detected – storing...")
-                    local boxPos = safeBox.Position + Vector3.new(0, 2, 0)
-                    local cf = faceHorizontally(safeBox.Position, rootPart)
-                    cf = cf - cf.Position + boxPos
-                    rootPart.CFrame = cf
-                    task.wait(0.3)
-                    humanoid:EquipTool(special)
-                    task.wait(0.5)
-                    sellEvent:FireServer("StoreBank", "5", "", safeModel)
-                    print("Stored Shotgun Ammo Pack")
-                end
-
-                -- Mark as processed – don't put back
-                processedAny = true
-                break   -- exit the for loop, go back to remaining queue
             end
         end
 
-        if not processedAny then
-            -- All remaining handles are blocked by mobs; wait a bit and retry
-            task.wait(1)
+        -- Only sell if we actually picked something up
+        if lootedSomething then
+            sellBackpackItems()
+            -- Store Shotgun Ammo Pack if present
+            local special = backpack:FindFirstChild("Shotgun Ammo Pack")
+            if special and safeBox and safeModel and rootPart and humanoid.Health > 0 then
+                print("Shotgun Ammo Pack detected – storing in safe...")
+                local boxPos = safeBox.Position + Vector3.new(0, 2, 0)
+                local cf = faceHorizontally(safeBox.Position, rootPart)
+                cf = cf - cf.Position + boxPos
+                rootPart.CFrame = cf
+                task.wait(0.3)
+                humanoid:EquipTool(special)
+                task.wait(0.5)
+                sellEvent:FireServer("StoreBank", "5", "", safeModel)
+                print("Stored Shotgun Ammo Pack")
+            end
         end
+
+        -- Mark this storage as opened
+        opened[i] = true
+        task.wait(0.2)
     end
-    -- Cycle finished (or death interrupted) – loop immediately repeats
+    -- Cycle ends, instantly restart
 end
