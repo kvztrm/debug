@@ -27,7 +27,16 @@ local itemsToIgnore = {
     ["AK47"] = true,
     ["Revolver"] = true,
     ["Speed Juice"] = true,
+    ["Light Ammo Pack"] = true,
+    ["Medium Ammo Pack"] = true,
+    ["Knife"] = true,
 }
+
+-- Helper function to clean names like "Wallet [2]" -> "Wallet"
+local function getCleanName(toolName)
+    -- This removes space + bracket + numbers + bracket at the end of a string
+    return string.gsub(toolName, "%s*%[%d+%]$", "")
+end
 
 local function getMobPosition(mob)
     if mob:IsA("BasePart") then
@@ -100,16 +109,22 @@ local function sellAll(forceSell)
     
     if currentBackpack then
         for _, tool in ipairs(currentBackpack:GetChildren()) do
-            if tool:IsA("Tool") and not itemsToIgnore[tool.Name] then 
-                toSellCount = toSellCount + 1 
+            if tool:IsA("Tool") then
+                local cleanName = getCleanName(tool.Name)
+                if not itemsToIgnore[cleanName] then 
+                    toSellCount = toSellCount + 1 
+                end
             end
         end
     end
     
     if char then
         for _, tool in ipairs(char:GetChildren()) do
-            if tool:IsA("Tool") and not itemsToIgnore[tool.Name] then
-                toSellCount = toSellCount + 1
+            if tool:IsA("Tool") then
+                local cleanName = getCleanName(tool.Name)
+                if not itemsToIgnore[cleanName] then
+                    toSellCount = toSellCount + 1
+                end
             end
         end
     end
@@ -123,7 +138,6 @@ local function sellAll(forceSell)
         local targetNPC = npcByName or npcByIndex
         
         if targetNPC then
-            -- Dynamically find the NPC's actual position in the world
             local targetPos
             if targetNPC:IsA("Model") and targetNPC.PrimaryPart then
                 targetPos = targetNPC.PrimaryPart.Position
@@ -134,11 +148,9 @@ local function sellAll(forceSell)
             end
             
             if targetPos then
-                -- Teleport 3 studs away from the NPC dynamically
                 root.CFrame = CFrame.new(targetPos + Vector3.new(0, 0, 3), targetPos)
-                task.wait(0.6) -- CRUCIAL: Let the server physics sync your location
+                task.wait(0.6) 
             else
-                -- Fallback to hardcoded if it can't find the NPC's physical part
                 root.CFrame = CFrame.new(-677, 10, 12)
                 task.wait(0.6)
             end
@@ -159,12 +171,23 @@ local function sellAll(forceSell)
     end
 end
 
+local function findToolByCleanName(parent, targetName)
+    if not parent then return nil end
+    for _, tool in ipairs(parent:GetChildren()) do
+        if tool:IsA("Tool") and getCleanName(tool.Name) == targetName then
+            return tool
+        end
+    end
+    return nil
+end
+
 local function storeSpecial()
     local currentBackpack = player:FindFirstChild("Backpack")
     local char = player.Character
     if not char then return end
     
-    local special = (currentBackpack and currentBackpack:FindFirstChild("Shotgun Ammo Pack")) or char:FindFirstChild("Shotgun Ammo Pack")
+    -- Using the custom finder so it detects "Shotgun Ammo Pack [2]"
+    local special = findToolByCleanName(currentBackpack, "Shotgun Ammo Pack") or findToolByCleanName(char, "Shotgun Ammo Pack")
     
     if special and safeBox and safeModel then
         local root = char:FindFirstChild("HumanoidRootPart")
