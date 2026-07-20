@@ -35,6 +35,8 @@ local itemsToIgnore = {
     ["Speed Juice"] = true,
     ["Light Ammo Pack"] = true,
     ["Medium Ammo Pack"] = true,
+    ["Baseball Bat"] = true,
+    ["Armor Pad"] = true,
     ["Knife"] = true,
 }
 
@@ -135,42 +137,24 @@ local function sellAll(forceSell)
     if toSellCount > 0 or forceSell then
         print("Preparing to sell... Items detected: " .. toSellCount)
         
+        -- Teleport directly to hardcoded position
+        root.CFrame = CFrame.new(677, 6, -8)
+        task.wait(0.6) 
+
         local npcFolder = workspace:FindFirstChild("NPC")
         local npcByIndex = npcFolder and npcFolder:GetChildren()[3]
         local npcByName = npcFolder and npcFolder:FindFirstChild("Storage Collector")
-        local targetNPC = npcByName or npcByIndex
         
-        if targetNPC then
-            local targetPos
-            if targetNPC:IsA("Model") and targetNPC.PrimaryPart then
-                targetPos = targetNPC.PrimaryPart.Position
-            elseif targetNPC:FindFirstChild("HumanoidRootPart") then
-                targetPos = targetNPC.HumanoidRootPart.Position
-            elseif targetNPC:IsA("BasePart") then
-                targetPos = targetNPC.Position
-            end
-            
-            if targetPos then
-                root.CFrame = CFrame.new(targetPos + Vector3.new(0, 0, 3), targetPos)
-                task.wait(0.6) 
-            else
-                root.CFrame = CFrame.new(-677, 10, 12)
-                task.wait(0.6)
-            end
-
-            print("Firing sell remotes...")
-            if npcByIndex then
-                sellEvent:FireServer("SellAllItems", npcByIndex, {})
-            end
-            if npcByName then
-                sellEvent:FireServer("SellAllItems", npcByName, {})
-            end
-            
-            print("Finished firing remotes.")
-            task.wait(0.3)
-        else
-            warn("Could not find seller NPC in workspace!")
+        print("Firing sell remotes...")
+        if npcByIndex then
+            sellEvent:FireServer("SellAllItems", npcByIndex, {})
         end
+        if npcByName then
+            sellEvent:FireServer("SellAllItems", npcByName, {})
+        end
+        
+        print("Finished firing remotes.")
+        task.wait(0.3)
     end
 end
 
@@ -212,12 +196,11 @@ local function storeSpecial()
 end
 
 while true do
-    -- Mandatory yield to prevent crashing!
     task.wait(1) 
     
     local char = player.Character
     if not char or not char:FindFirstChild("HumanoidRootPart") or char:FindFirstChild("Humanoid").Health <= 0 then
-        continue -- Safe to continue now since the wait is at the top
+        continue 
     end
     
     local root = char:FindFirstChild("HumanoidRootPart")
@@ -225,11 +208,10 @@ while true do
     if not root or not humanoid then continue end
 
     sellAll(false) 
-    local opened = {}
-    for _ = 1, #handles do table.insert(opened, false) end
+    
+    local interactedAny = false
 
     for i, handle in ipairs(handles) do
-        if opened[i] then continue end
         if not player.Character or player.Character:FindFirstChild("Humanoid").Health <= 0 then break end
 
         local skip = false
@@ -237,11 +219,16 @@ while true do
             for _, mob in ipairs(mobsFolder:GetChildren()) do
                 if mob and mob.Parent then
                     local mobPos = getMobPosition(mob)
-                    if mobPos and (mobPos - handle.Position).Magnitude <= 80 then skip = true; break end
+                    if mobPos and (mobPos - handle.Position).Magnitude <= 60 then 
+                        skip = true
+                        break 
+                    end
                 end
             end
         end
         if skip then continue end
+
+        interactedAny = true
 
         root.CFrame = CFrame.new(handle.Position + Vector3.new(0, 2, 0))
         task.wait(0.5)
@@ -280,7 +267,11 @@ while true do
             sellAll(true) 
             storeSpecial() 
         end
-        opened[i] = true
         task.wait(0.2)
+    end
+    
+    if not interactedAny then
+        print("No safe storages available. Retreating to safe point.")
+        root.CFrame = CFrame.new(677, 6, -8)
     end
 end
