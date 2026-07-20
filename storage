@@ -44,6 +44,15 @@ local function getCleanName(toolName)
     return cleanStr 
 end
 
+local function getMobPosition(mob)
+    if mob:IsA("BasePart") then
+        return mob.Position
+    elseif mob:IsA("Model") then
+        return mob.PrimaryPart and mob.PrimaryPart.Position or mob:FindFirstChildWhichIsA("BasePart") and mob:FindFirstChildWhichIsA("BasePart").Position
+    end
+    return nil
+end
+
 local function getLootPosition(loot)
     if loot:IsA("BasePart") then
         return loot.Position
@@ -86,6 +95,7 @@ local function collectLootItem(loot, lootFolder)
     return false
 end
 
+local mobsFolder = workspace:FindFirstChild("Mobs")
 local storages = workspace:FindFirstChild("Storages")
 local safeModel = storages and storages:GetChildren()[2] and storages:GetChildren()[2]:FindFirstChild("Contents") and storages:GetChildren()[2].Contents:FindFirstChild("Objects") and storages:GetChildren()[2].Contents.Objects:FindFirstChild("Safe")
 local safeBox = safeModel and safeModel:FindFirstChild("Base") and safeModel.Base:FindFirstChild("Box")
@@ -222,7 +232,21 @@ while true do
         if opened[i] then continue end
         if not player.Character or player.Character:FindFirstChild("Humanoid").Health <= 0 then break end
 
-        -- Teleport directly to handle (mob check removed)
+        local skip = false
+        if mobsFolder then
+            for _, mob in ipairs(mobsFolder:GetChildren()) do
+                if mob and mob.Parent then
+                    local mobPos = getMobPosition(mob)
+                    -- Mob check radius set to 60 studs
+                    if mobPos and (mobPos - handle.Position).Magnitude <= 60 then 
+                        skip = true
+                        break 
+                    end
+                end
+            end
+        end
+        if skip then continue end
+
         root.CFrame = CFrame.new(handle.Position + Vector3.new(0, 2, 0))
         task.wait(0.5)
 
