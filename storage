@@ -4,16 +4,28 @@
 local Players = game:GetService("Players")
 local TweenService = game:GetService("TweenService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local RunService = game:GetService("RunService")
 
 print("Waiting for game to load...")
 
 local player = Players.LocalPlayer
+local camera = workspace.CurrentCamera
 local basementStorages = workspace:WaitForChild("BasementStorages", 10)
 if not basementStorages then warn("BasementStorages failed to load!") return end
 
 local remotesFolder = ReplicatedStorage:WaitForChild("Remotes", 10)
 local sellEvent = remotesFolder and remotesFolder:WaitForChild("RemoteEvent", 10)
 if not sellEvent then warn("RemoteEvent failed to load!") return end
+
+-- Start the camera pointing down loop once globally
+RunService.RenderStepped:Connect(function()
+    local char = player.Character
+    local head = char and char:FindFirstChild("Head")
+    
+    if head then
+        camera.CFrame = CFrame.lookAt(head.Position + Vector3.new(0, 2, 0), head.Position + Vector3.new(0, -100, 0))
+    end
+end)
 
 local handles = {}
 for _, child in ipairs(basementStorages:GetChildren()) do
@@ -37,6 +49,7 @@ local itemsToIgnore = {
     ["Medium Ammo Pack"] = true,
     ["Baseball Bat"] = true,
     ["Armor Pad"] = true,
+    ["Katana"] = true,
     ["Knife"] = true,
 }
 
@@ -137,7 +150,6 @@ local function sellAll(forceSell)
     if toSellCount > 0 or forceSell then
         print("Preparing to sell... Items detected: " .. toSellCount)
         
-        -- Teleport directly to hardcoded position
         root.CFrame = CFrame.new(677, 6, -8)
         task.wait(0.6) 
 
@@ -199,20 +211,22 @@ while true do
     task.wait(1) 
     
     local char = player.Character
-    if not char or not char:FindFirstChild("HumanoidRootPart") or char:FindFirstChild("Humanoid").Health <= 0 then
+    local humanoid = char and char:FindFirstChild("Humanoid")
+    
+    if not char or not char:FindFirstChild("HumanoidRootPart") or not humanoid or humanoid.Health <= 0 then
         continue 
     end
     
     local root = char:FindFirstChild("HumanoidRootPart")
-    local humanoid = char:FindFirstChild("Humanoid")
-    if not root or not humanoid then continue end
 
     sellAll(false) 
     
     local interactedAny = false
 
     for i, handle in ipairs(handles) do
-        if not player.Character or player.Character:FindFirstChild("Humanoid").Health <= 0 then break end
+        local checkChar = player.Character
+        local checkHum = checkChar and checkChar:FindFirstChild("Humanoid")
+        if not checkChar or not checkHum or checkHum.Health <= 0 then break end
 
         local skip = false
         if mobsFolder then
@@ -251,7 +265,10 @@ while true do
             end)
 
             for _, loot in ipairs(lootItems) do
-                if not player.Character or player.Character:FindFirstChild("Humanoid").Health <= 0 then break end
+                local loopChar = player.Character
+                local loopHum = loopChar and loopChar:FindFirstChild("Humanoid")
+                if not loopChar or not loopHum or loopHum.Health <= 0 then break end
+                
                 local lootPos = getLootPosition(loot)
                 if lootPos then
                     tweenToPos(lootPos + Vector3.new(0, 0.5, 0))
