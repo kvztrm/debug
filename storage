@@ -217,7 +217,7 @@ while true do
     
     local char = player.Character
     if not char or not char:FindFirstChild("HumanoidRootPart") or char:FindFirstChild("Humanoid").Health <= 0 then
-        continue 
+        continue -- Safe to continue now since the wait is at the top
     end
     
     local root = char:FindFirstChild("HumanoidRootPart")
@@ -237,11 +237,7 @@ while true do
             for _, mob in ipairs(mobsFolder:GetChildren()) do
                 if mob and mob.Parent then
                     local mobPos = getMobPosition(mob)
-                    -- Mob check radius set to 60 studs
-                    if mobPos and (mobPos - handle.Position).Magnitude <= 60 then 
-                        skip = true
-                        break 
-                    end
+                    if mobPos and (mobPos - handle.Position).Magnitude <= 80 then skip = true; break end
                 end
             end
         end
