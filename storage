@@ -5,9 +5,15 @@ local Players = game:GetService("Players")
 local TweenService = game:GetService("TweenService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
+print("Waiting for game to load...")
+
 local player = Players.LocalPlayer
-local basementStorages = workspace:FindFirstChild("BasementStorages")
-if not basementStorages then warn("BasementStorages not found") return end
+local basementStorages = workspace:WaitForChild("BasementStorages", 10)
+if not basementStorages then warn("BasementStorages failed to load!") return end
+
+local remotesFolder = ReplicatedStorage:WaitForChild("Remotes", 10)
+local sellEvent = remotesFolder and remotesFolder:WaitForChild("RemoteEvent", 10)
+if not sellEvent then warn("RemoteEvent failed to load!") return end
 
 local handles = {}
 for _, child in ipairs(basementStorages:GetChildren()) do
@@ -17,8 +23,8 @@ for _, child in ipairs(basementStorages:GetChildren()) do
         if handle and handle:IsA("BasePart") then table.insert(handles, handle) end
     end
 end
-if #handles == 0 then warn("No handles found") return end
-print("Found " .. #handles .. " handles. Running...")
+if #handles == 0 then warn("No handles found! Stopping.") return end
+print("Found " .. #handles .. " handles. Running main loop...")
 
 -- Blacklist of items the bot should NEVER try to sell
 local itemsToIgnore = {
@@ -32,10 +38,10 @@ local itemsToIgnore = {
     ["Knife"] = true,
 }
 
--- Helper function to clean names like "Wallet [2]" -> "Wallet"
+-- Safely cleans names (e.g., "Wallet [1]" -> "Wallet")
 local function getCleanName(toolName)
-    -- This removes space + bracket + numbers + bracket at the end of a string
-    return string.gsub(toolName, "%s*%[%d+%]$", "")
+    local cleanStr = string.gsub(toolName, "%s*%[%d+%]", "")
+    return cleanStr -- Force return only the first value
 end
 
 local function getMobPosition(mob)
@@ -90,9 +96,6 @@ local function collectLootItem(loot, lootFolder)
 end
 
 local mobsFolder = workspace:FindFirstChild("Mobs")
-local sellEvent = ReplicatedStorage:FindFirstChild("Remotes") and ReplicatedStorage.Remotes:FindFirstChild("RemoteEvent")
-if not sellEvent then warn("RemoteEvent not found") end
-
 local storages = workspace:FindFirstChild("Storages")
 local safeModel = storages and storages:GetChildren()[2] and storages:GetChildren()[2]:FindFirstChild("Contents") and storages:GetChildren()[2].Contents:FindFirstChild("Objects") and storages:GetChildren()[2].Contents.Objects:FindFirstChild("Safe")
 local safeBox = safeModel and safeModel:FindFirstChild("Base") and safeModel.Base:FindFirstChild("Box")
@@ -155,7 +158,7 @@ local function sellAll(forceSell)
                 task.wait(0.6)
             end
 
-            print("Firing sell remotes for both NPC targets...")
+            print("Firing sell remotes...")
             if npcByIndex then
                 sellEvent:FireServer("SellAllItems", npcByIndex, {})
             end
@@ -163,7 +166,7 @@ local function sellAll(forceSell)
                 sellEvent:FireServer("SellAllItems", npcByName, {})
             end
             
-            print("Fired remotes completely.")
+            print("Finished firing remotes.")
             task.wait(0.3)
         else
             warn("Could not find seller NPC in workspace!")
@@ -186,7 +189,6 @@ local function storeSpecial()
     local char = player.Character
     if not char then return end
     
-    -- Using the custom finder so it detects "Shotgun Ammo Pack [2]"
     local special = findToolByCleanName(currentBackpack, "Shotgun Ammo Pack") or findToolByCleanName(char, "Shotgun Ammo Pack")
     
     if special and safeBox and safeModel then
