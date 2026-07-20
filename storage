@@ -41,16 +41,7 @@ local itemsToIgnore = {
 -- Safely cleans names (e.g., "Wallet [1]" -> "Wallet")
 local function getCleanName(toolName)
     local cleanStr = string.gsub(toolName, "%s*%[%d+%]", "")
-    return cleanStr -- Force return only the first value
-end
-
-local function getMobPosition(mob)
-    if mob:IsA("BasePart") then
-        return mob.Position
-    elseif mob:IsA("Model") then
-        return mob.PrimaryPart and mob.PrimaryPart.Position or mob:FindFirstChildWhichIsA("BasePart") and mob:FindFirstChildWhichIsA("BasePart").Position
-    end
-    return nil
+    return cleanStr 
 end
 
 local function getLootPosition(loot)
@@ -95,7 +86,6 @@ local function collectLootItem(loot, lootFolder)
     return false
 end
 
-local mobsFolder = workspace:FindFirstChild("Mobs")
 local storages = workspace:FindFirstChild("Storages")
 local safeModel = storages and storages:GetChildren()[2] and storages:GetChildren()[2]:FindFirstChild("Contents") and storages:GetChildren()[2].Contents:FindFirstChild("Objects") and storages:GetChildren()[2].Contents.Objects:FindFirstChild("Safe")
 local safeBox = safeModel and safeModel:FindFirstChild("Base") and safeModel.Base:FindFirstChild("Box")
@@ -212,12 +202,14 @@ local function storeSpecial()
 end
 
 while true do
+    -- Mandatory yield to prevent crashing!
+    task.wait(1) 
+    
     local char = player.Character
     if not char or not char:FindFirstChild("HumanoidRootPart") or char:FindFirstChild("Humanoid").Health <= 0 then
-        player.CharacterAdded:Wait()
-        task.wait(1)
+        continue 
     end
-    char = player.Character
+    
     local root = char:FindFirstChild("HumanoidRootPart")
     local humanoid = char:FindFirstChild("Humanoid")
     if not root or not humanoid then continue end
@@ -230,17 +222,7 @@ while true do
         if opened[i] then continue end
         if not player.Character or player.Character:FindFirstChild("Humanoid").Health <= 0 then break end
 
-        local skip = false
-        if mobsFolder then
-            for _, mob in ipairs(mobsFolder:GetChildren()) do
-                if mob and mob.Parent then
-                    local mobPos = getMobPosition(mob)
-                    if mobPos and (mobPos - handle.Position).Magnitude <= 80 then skip = true; break end
-                end
-            end
-        end
-        if skip then continue end
-
+        -- Teleport directly to handle (mob check removed)
         root.CFrame = CFrame.new(handle.Position + Vector3.new(0, 2, 0))
         task.wait(0.5)
 
