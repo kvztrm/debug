@@ -28,28 +28,10 @@ local function GetAllActiveParts()
     local seen = {}
 
     for _, plate in pairs(Plates:GetChildren()) do
-        local ap = plate:FindFirstChild("ActiveParts")
-        if ap then
-            for _, part in ipairs(ap:GetChildren()) do
-                if not seen[part] then
-                    seen[part] = true
-                    table.insert(parts, part)
-                end
-            end
-        end
-
-        for i = 1, 9 do
-            local sub = plate:FindFirstChild("Plate" .. i)
-            if sub then
-                local subAP = sub:FindFirstChild("ActiveParts")
-                if subAP then
-                    for _, part in ipairs(subAP:GetChildren()) do
-                        if not seen[part] then
-                            seen[part] = true
-                            table.insert(parts, part)
-                        end
-                    end
-                end
+        for _, desc in ipairs(plate:GetDescendants()) do
+            if desc:IsA("BasePart") and not seen[desc] then
+                seen[desc] = true
+                table.insert(parts, desc)
             end
         end
     end
@@ -80,7 +62,6 @@ local function KillAll()
     end
 end
 
--- Highlight (no tool check)
 local CurrentTarget = nil
 
 local function HighlightTarget(target)
@@ -116,20 +97,19 @@ local function HandleMouseMove(pos)
     HighlightTarget(result and result.Instance or nil)
 end
 
+-- Highlight still tracks mouse so you can see what you're aiming at
 Services.UserInputService.InputChanged:Connect(function(input)
     if not AutoKillEnabled then return end
-    if input.UserInputType == Enum.UserInputType.MouseMovement
-    or input.UserInputType == Enum.UserInputType.Touch then
+    if input.UserInputType == Enum.UserInputType.MouseMovement then
         HandleMouseMove(Vector2.new(input.Position.X, input.Position.Y))
     end
 end)
 
-Services.UserInputService.InputBegan:Connect(function(input, processed)
-    if processed or not AutoKillEnabled then return end
+-- Q: kill hovered part, or nuke all if nothing hovered
+Services.UserInputService.InputBegan:Connect(function(input)
+    if not AutoKillEnabled then return end
 
-    -- Left click: kill hovered part, or nuke all if nothing under cursor
-    if input.UserInputType == Enum.UserInputType.MouseButton1
-    or input.UserInputType == Enum.UserInputType.Touch then
+    if input.KeyCode == Enum.KeyCode.Q then
         if CurrentTarget then
             KillPart(CurrentTarget)
             HighlightTarget(nil)
@@ -137,11 +117,6 @@ Services.UserInputService.InputBegan:Connect(function(input, processed)
             KillAll()
         end
     end
-
-    -- Right click: always nuke all
-    if input.UserInputType == Enum.UserInputType.MouseButton2 then
-        KillAll()
-    end
 end)
 
-print("[BugHammer] Active — LClick: hovered part | RClick: nuke all plates")
+print("[BugHammer] Active — Q: hovered part | Q on empty: nuke all")
