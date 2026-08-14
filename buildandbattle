@@ -80,7 +80,6 @@ local function KillAll()
     end
 end
 
--- Highlight (no tool check)
 local CurrentTarget = nil
 
 local function HighlightTarget(target)
@@ -127,7 +126,6 @@ end)
 Services.UserInputService.InputBegan:Connect(function(input, processed)
     if processed or not AutoKillEnabled then return end
 
-    -- Left click: kill hovered part, or nuke all if nothing under cursor
     if input.UserInputType == Enum.UserInputType.MouseButton1
     or input.UserInputType == Enum.UserInputType.Touch then
         if CurrentTarget then
@@ -137,11 +135,6 @@ Services.UserInputService.InputBegan:Connect(function(input, processed)
             KillAll()
         end
     end
-
-    -- Right click: always nuke all
-    if input.UserInputType == Enum.UserInputType.MouseButton2 then
-        KillAll()
-    end
 end)
 
-print("[BugHammer] Active — LClick: hovered part | RClick: nuke all plates")
+print("[BugHammer] Active — LClick: hovered part | Empty click: nuke all plates")
