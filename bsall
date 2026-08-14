@@ -1,0 +1,117 @@
+local Services = {
+    ReplicatedStorage = game:GetService("ReplicatedStorage"),
+    UserInputService = game:GetService("UserInputService"),
+    Workspace = game:GetService("Workspace"),
+    Players = game:GetService("Players")
+}
+
+local LPlayer = Services.Players.LocalPlayer
+local Remotes = Services.ReplicatedStorage:WaitForChild("Remotes")
+local StampAsset = Remotes:WaitForChild("StampAsset")
+local Plates = Services.Workspace:WaitForChild("Plates")
+
+local LPlate = nil
+local AutoKillEnabled = true
+
+local function RefreshLPlate()
+    for _, Plate in pairs(Plates:GetChildren()) do
+        if Plate:FindFirstChild("Owner") and Plate.Owner.Value == LPlayer then
+            LPlate = Plate:FindFirstChild("Plate")
+            return
+        end
+    end
+end
+RefreshLPlate()
+
+local function KillPart(part)
+    if not LPlate then RefreshLPlate() end
+    if not LPlate then return end
+    pcall(function()
+        StampAsset:InvokeServer(
+            41324945,
+            LPlate.CFrame - Vector3.new(0, 8.99991e14, 0),
+            "{99ab22df-ca29-4143-a2fd-0a1b79db78c2}",
+            {part},
+            0
+        )
+    end)
+end
+
+local function KillAll()
+    -- Every descendant of every plate, no filter
+    for _, plate in pairs(Plates:GetChildren()) do
+        for _, part in ipairs(plate:GetDescendants()) do
+            if part:IsA("BasePart") then
+                task.spawn(function()
+                    KillPart(part)
+                end)
+            end
+        end
+    end
+end
+
+-- Highlight
+local CurrentTarget = nil
+
+local function HighlightTarget(target)
+    if CurrentTarget and CurrentTarget:FindFirstChild("BugHammerHL") then
+        CurrentTarget.BugHammerHL:Destroy()
+    end
+    CurrentTarget = nil
+
+    if target then
+        local hl = Instance.new("Highlight")
+        hl.Name = "BugHammerHL"
+        hl.FillTransparency = 1
+        hl.OutlineColor = Color3.fromRGB(0, 255, 0)
+        hl.Parent = target
+        CurrentTarget = target
+    end
+end
+
+local function HandleMouseMove(pos)
+    if not LPlayer.Character then return end
+
+    local cam = workspace.CurrentCamera
+    local params = RaycastParams.new()
+    params.FilterDescendantsInstances = {LPlayer.Character}
+    params.FilterType = Enum.RaycastFilterType.Blacklist
+
+    local result = workspace:Raycast(
+        cam.CFrame.Position,
+        cam:ScreenPointToRay(pos.X, pos.Y).Direction * 1000,
+        params
+    )
+
+    HighlightTarget(result and result.Instance or nil)
+end
+
+Services.UserInputService.InputChanged:Connect(function(input)
+    if not AutoKillEnabled then return end
+    if input.UserInputType == Enum.UserInputType.MouseMovement
+    or input.UserInputType == Enum.UserInputType.Touch then
+        HandleMouseMove(Vector2.new(input.Position.X, input.Position.Y))
+    end
+end)
+
+Services.UserInputService.InputBegan:Connect(function(input, processed)
+    if processed or not AutoKillEnabled then return end
+
+    -- Left click: kill hovered part, or nuke everything if nothing hovered
+    if input.UserInputType == Enum.UserInputType.MouseButton1
+    or input.UserInputType == Enum.UserInputType.Touch then
+        if CurrentTarget then
+            KillPart(CurrentTarget)
+            HighlightTarget(nil)
+        else
+            KillAll()
+        end
+    end
+
+    -- Right click: nuke everything unconditionally
+    if input.UserInputType == Enum.UserInputType.MouseButton2 then
+        KillAll()
+    end
+end)
+
+print("[BugHammer] Active — LClick: hovered part | RClick: nuke everything")
