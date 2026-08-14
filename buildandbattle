@@ -11,9 +11,8 @@ local StampAsset = Remotes:WaitForChild("StampAsset")
 local Plates = Services.Workspace:WaitForChild("Plates")
 
 local LPlate = nil
-local AutoKillEnabled = false
+local AutoKillEnabled = true
 
--- Find local player's plate
 local function RefreshLPlate()
     for _, Plate in pairs(Plates:GetChildren()) do
         if Plate:FindFirstChild("Owner") and Plate.Owner.Value == LPlayer then
@@ -24,16 +23,11 @@ local function RefreshLPlate()
 end
 RefreshLPlate()
 
-local function IsHoldingDeleteTool()
-    return LPlayer.Character and LPlayer.Character:FindFirstChild("2 Delete") ~= nil
-end
-
 local function GetAllActiveParts()
     local parts = {}
     local seen = {}
 
     for _, plate in pairs(Plates:GetChildren()) do
-        -- Direct ActiveParts
         local ap = plate:FindFirstChild("ActiveParts")
         if ap then
             for _, part in ipairs(ap:GetChildren()) do
@@ -44,7 +38,6 @@ local function GetAllActiveParts()
             end
         end
 
-        -- Plate1-9 named children
         for i = 1, 9 do
             local sub = plate:FindFirstChild("Plate" .. i)
             if sub then
@@ -87,20 +80,7 @@ local function KillAll()
     end
 end
 
-local function KillTarget(target)
-    if not target then
-        KillAll()
-        return
-    end
-    if target:IsA("Player") then
-        target = target.Character and target.Character.PrimaryPart
-    end
-    if target then
-        KillPart(target)
-    end
-end
-
--- Highlight
+-- Highlight (no tool check)
 local CurrentTarget = nil
 
 local function HighlightTarget(target)
@@ -109,7 +89,7 @@ local function HighlightTarget(target)
     end
     CurrentTarget = nil
 
-    if target and IsHoldingDeleteTool() then
+    if target then
         local hl = Instance.new("Highlight")
         hl.Name = "BugHammerHL"
         hl.FillTransparency = 1
@@ -120,10 +100,7 @@ local function HighlightTarget(target)
 end
 
 local function HandleMouseMove(pos)
-    if not (LPlayer.Character and IsHoldingDeleteTool()) then
-        HighlightTarget(nil)
-        return
-    end
+    if not LPlayer.Character then return end
 
     local cam = workspace.CurrentCamera
     local params = RaycastParams.new()
@@ -139,8 +116,8 @@ local function HandleMouseMove(pos)
     HighlightTarget(result and result.Instance or nil)
 end
 
--- Input
 Services.UserInputService.InputChanged:Connect(function(input)
+    if not AutoKillEnabled then return end
     if input.UserInputType == Enum.UserInputType.MouseMovement
     or input.UserInputType == Enum.UserInputType.Touch then
         HandleMouseMove(Vector2.new(input.Position.X, input.Position.Y))
@@ -148,12 +125,17 @@ Services.UserInputService.InputChanged:Connect(function(input)
 end)
 
 Services.UserInputService.InputBegan:Connect(function(input, processed)
-    if processed or not AutoKillEnabled or not IsHoldingDeleteTool() then return end
+    if processed or not AutoKillEnabled then return end
 
-    -- Left click: kill hovered part, or nuke all if nothing hovered
+    -- Left click: kill hovered part, or nuke all if nothing under cursor
     if input.UserInputType == Enum.UserInputType.MouseButton1
     or input.UserInputType == Enum.UserInputType.Touch then
-        KillTarget(CurrentTarget)
+        if CurrentTarget then
+            KillPart(CurrentTarget)
+            HighlightTarget(nil)
+        else
+            KillAll()
+        end
     end
 
     -- Right click: always nuke all
@@ -162,235 +144,4 @@ Services.UserInputService.InputBegan:Connect(function(input, processed)
     end
 end)
 
--- Cleanup on tool drop
-LPlayer.CharacterAdded:Connect(function(char)
-    char.ChildRemoved:Connect(function(child)
-        if child.Name == "2 Delete" then
-            HighlightTarget(nil)
-        end
-    end)
-end)
-
-if LPlayer.Character then
-    LPlayer.Character.ChildRemoved:Connect(function(child)
-        if child.Name == "2 Delete" then
-            HighlightTarget(nil)
-        end
-    end)
-end
-
--- Toggle — wire this into your UI or just set AutoKillEnabled = true to enable
--- Tab1:AddToggle({
---     Name = "Bug Hammer",
---     Description = "LClick: delete hovered | RClick: nuke all plates",
---     Default = false,
---     Callback = function(Value)
---         AutoKillEnabled = Value
---     end
--- })
-
--- Uncomment to run standalone without UI:
-AutoKillEnabled = true
-print("[BugHammer] Active — LClick: hovered part | RClick: all plates")local Services = {
-    ReplicatedStorage = game:GetService("ReplicatedStorage"),
-    UserInputService = game:GetService("UserInputService"),
-    Workspace = game:GetService("Workspace"),
-    Players = game:GetService("Players")
-}
-
-local LPlayer = Services.Players.LocalPlayer
-
-local Variables = {
-    Remotes = Services.ReplicatedStorage.Remotes,
-    Plates = Services.Workspace.Plates,
-    CurrentTarget = nil
-}
-
-Variables.StampAsset = Variables.Remotes.StampAsset
-Variables.DeleteAsset = Variables.Remotes.DeleteAsset
-
--- Find local player's plate for the stamp CFrame origin
-for _, Plate in pairs(Variables.Plates:GetChildren()) do
-    if Plate.Owner.Value == LPlayer then
-        Variables.LPlate = Plate.Plate
-        Variables.ActiveParts = Plate.ActiveParts
-        break
-    end
-end
-
-local AutoKillEnabled = false
-
-local Module = {}
-
-function Module.IsHoldingValidTool()
-    local character = LPlayer.Character
-    return character and character:FindFirstChild("2 Delete") ~= nil
-end
-
--- Collect every ActiveParts child from Plate1–Plate9 + all Plate.Plate1.ActiveParts
-local function GetAllTargetParts()
-    local parts = {}
-
-    -- workspace.Plates children named "Plate1" through "Plate9"
-    for i = 1, 9 do
-        local plate = Variables.Plates:FindFirstChild("Plate" .. i)
-        if plate then
-            local activeParts = plate:FindFirstChild("ActiveParts")
-            if activeParts then
-                for _, part in ipairs(activeParts:GetChildren()) do
-                    table.insert(parts, part)
-                end
-            end
-        end
-    end
-
-    -- Also sweep every plate in workspace.Plates generically (catches any naming)
-    for _, plate in pairs(Variables.Plates:GetChildren()) do
-        local activeParts = plate:FindFirstChild("ActiveParts")
-        if activeParts then
-            for _, part in ipairs(activeParts:GetChildren()) do
-                -- Deduplicate: skip if already added via Plate1–9 loop
-                local already = false
-                for _, existing in ipairs(parts) do
-                    if existing == part then already = true break end
-                end
-                if not already then
-                    table.insert(parts, part)
-                end
-            end
-        end
-
-        -- workspace.Plates.Plate1.ActiveParts (nested Plate1 inside a plate container)
-        local nested = plate:FindFirstChild("Plate1")
-        if nested then
-            local nestedActive = nested:FindFirstChild("ActiveParts")
-            if nestedActive then
-                for _, part in ipairs(nestedActive:GetChildren()) do
-                    table.insert(parts, part)
-                end
-            end
-        end
-    end
-
-    return parts
-end
-
-function Module.Kill(Target)
-    if not (AutoKillEnabled and Module.IsHoldingValidTool()) then return end
-    if not Variables.LPlate then return end
-
-    -- If given a specific target (from raycast), kill just that
-    if Target then
-        if Target:IsA("Player") then
-            Target = Target.Character and Target.Character.PrimaryPart
-        end
-        if Target then
-            Variables.StampAsset:InvokeServer(
-                41324945,
-                Variables.LPlate.CFrame - Vector3.new(0, 8.99991e14, 0),
-                "{99ab22df-ca29-4143-a2fd-0a1b79db78c2}",
-                {Target},
-                0
-            )
-        end
-        return
-    end
-
-    -- No specific target: nuke all ActiveParts across all plates
-    local allParts = GetAllTargetParts()
-    for _, part in ipairs(allParts) do
-        task.spawn(function()
-            pcall(function()
-                Variables.StampAsset:InvokeServer(
-                    41324945,
-                    Variables.LPlate.CFrame - Vector3.new(0, 8.99991e14, 0),
-                    "{99ab22df-ca29-4143-a2fd-0a1b79db78c2}",
-                    {part},
-                    0
-                )
-            end)
-        end)
-    end
-end
-
--- Highlight logic (unchanged from original)
-local function HighlightTarget(Target)
-    if Variables.CurrentTarget and Variables.CurrentTarget:FindFirstChild("Highlight") then
-        Variables.CurrentTarget.Highlight:Destroy()
-    end
-
-    if Target and Module.IsHoldingValidTool() then
-        local Highlight = Instance.new("Highlight")
-        Highlight.Name = "Highlight"
-        Highlight.Parent = Target
-        Highlight.FillTransparency = 1
-        Highlight.OutlineColor = Color3.fromRGB(0, 255, 0)
-        Variables.CurrentTarget = Target
-    else
-        Variables.CurrentTarget = nil
-    end
-end
-
-local function HandleInput(Position)
-    if not (LPlayer.Character and Module.IsHoldingValidTool()) then
-        HighlightTarget(nil)
-        return
-    end
-
-    local Camera = workspace.CurrentCamera
-    local RayParams = RaycastParams.new()
-    RayParams.FilterDescendantsInstances = {LPlayer.Character}
-    RayParams.FilterType = Enum.RaycastFilterType.Blacklist
-
-    local RayOrigin = Camera.CFrame.Position
-    local RayDirection = Camera:ScreenPointToRay(Position.X, Position.Y).Direction * 1000
-
-    local Result = workspace:Raycast(RayOrigin, RayDirection, RayParams)
-    HighlightTarget(Result and Result.Instance or nil)
-end
-
-Services.UserInputService.InputChanged:Connect(function(InputObject)
-    if InputObject.UserInputType == Enum.UserInputType.MouseMovement
-    or InputObject.UserInputType == Enum.UserInputType.Touch then
-        HandleInput(Vector2.new(InputObject.Position.X, InputObject.Position.Y))
-    end
-end)
-
-Services.UserInputService.InputBegan:Connect(function(InputObject, Processed)
-    if Processed then return end
-    if not Module.IsHoldingValidTool() then return end
-
-    if InputObject.UserInputType == Enum.UserInputType.MouseButton1
-    or InputObject.UserInputType == Enum.UserInputType.Touch then
-        -- Raycast hit → kill that specific part
-        -- No raycast hit (CurrentTarget nil) → kill everything
-        Module.Kill(Variables.CurrentTarget)
-    end
-end)
-
--- Right-click / secondary input → nuke all plates explicitly
-Services.UserInputService.InputBegan:Connect(function(InputObject, Processed)
-    if Processed then return end
-    if not Module.IsHoldingValidTool() then return end
-    if not AutoKillEnabled then return end
-
-    if InputObject.UserInputType == Enum.UserInputType.MouseButton2 then
-        Module.Kill(nil) -- nil = sweep all plates
-    end
-end)
-
-LPlayer.Character.ChildRemoved:Connect(function(child)
-    if child.Name == "2 Delete" then
-        HighlightTarget(nil)
-    end
-end)
-
--- Wire the toggle (drop this where your Tab1 toggle was)
--- Tab1:AddToggle({
---     Name = "Bug Hammer",
---     Description = "Left click: delete hovered part | Right click: nuke ALL plates Plate1-9 + Plate1.ActiveParts",
---     Default = false,
---     Callback = function(Value)
---         AutoKillEnabled = Value
---     end
--- })
+print("[BugHammer] Active — LClick: hovered part | RClick: nuke all plates")
