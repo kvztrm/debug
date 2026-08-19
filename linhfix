@@ -1,0 +1,1221 @@
+if game.PlaceId ~= 10033751448 then
+    warn("Linhmc Hub only work on Build and Battle!")
+    return
+end
+
+if getgenv()._LinhmcHubRunning then
+    return
+end
+
+getgenv()._LinhmcHubRunning = true
+
+pcall(function()
+    queue_on_teleport([[
+        repeat wait() until game:IsLoaded()
+        loadstring(game:HttpGet("https://raw.githubusercontent.com/linhmcfake/LuaLibrary/refs/heads/main/RedzLibraryV5.lua"))()
+    ]])
+end)
+
+local allowedUsers = {
+    ["change it if u want"] = true,
+}
+
+local Services = {
+    Players = game:GetService("Players"),
+    ReplicatedStorage = game:GetService("ReplicatedStorage"),
+    Workspace = game:GetService("Workspace")
+}
+
+local HttpService = game:GetService("HttpService")
+local Players = game:GetService("Players")
+local Analytics = game:GetService("RbxAnalyticsService")
+local LocalPlayer = Players.LocalPlayer
+
+local redzlib = loadstring(game:HttpGet("https://raw.githubusercontent.com/linhmcfake/LuaLibrary/refs/heads/main/RedzLibraryV5.lua"))()
+
+local Window = redzlib:MakeWindow({
+  Title = "Linhmc Hub True v2: Build and battle",
+  SubTitle = "by linhmc_new",
+  SaveFolder = "linhmc_hub_v2"
+})
+local Tab1 = Window:MakeTab({"General", Icon = "rbxassetid://10723407389"})
+local Tab2 = Window:MakeTab({"Player", Icon = "rbxassetid://10747373426"})
+local Tab3 = Window:MakeTab({"Teleport", Icon = "rbxassetid://10747382750"})
+local Tab4 = Window:MakeTab({"Misc", Icon = "rbxassetid://10709790875"})
+Window:AddMinimizeButton({
+    Button = {
+        Image = "rbxassetid://132292718620518",
+        BackgroundTransparency = 0,
+    },
+    Corner = {
+        CornerRadius = UDim.new(0, 6), 
+    }
+})
+
+Window:SelectTab(Tab1)
+
+local function detectExecutor()
+    if identifyexecutor then 
+        return identifyexecutor()
+    elseif getexecutorname then 
+        return getexecutorname()
+    elseif CODEX_ENV then 
+        return "Codex"
+    elseif OXYGEN_ENV then 
+        return "Oxygen"
+    elseif WAVE_ENV then 
+        return "Wave"
+    elseif isexecutorclosure then 
+        return "Fluxus"
+    elseif KRNL_LOADED then 
+        return "KRNL"
+    elseif syn then 
+        return "Synapse"
+    elseif PROTOSMASHER_LOADED then 
+        return "ProtoSmasher"
+    elseif SENTINEL_LOADED then 
+        return "Sentinel"
+    elseif getgenv().TEMPEST_LOADED then 
+        return "Tempest"
+    else 
+        return "Unknown"
+    end
+end
+
+local Section = Tab4:AddSection({ "INFO" })
+local currentExecutor = detectExecutor()
+Tab4:AddParagraph({"Current Executor", "" .. currentExecutor})
+Tab4:AddParagraph({"Script Current Version:", "4.6"})
+
+local Section = Tab3:AddSection({ "TELEPORT" })
+
+Tab3:AddButton({
+    Name = "claim point",
+    Callback = function()
+        local player = game.Players.LocalPlayer
+        local character = player.Character or player.CharacterAdded:Wait()
+        local hrp = character:WaitForChild("HumanoidRootPart")
+        for _, part in pairs(workspace.Interactables.PointGivers:GetDescendants()) do
+            if part:IsA("BasePart") then
+                firetouchinterest(hrp, part, 0)
+                firetouchinterest(hrp, part, 1)
+                task.wait(0.3)
+            end
+        end
+    end
+})
+
+Tab3:AddButton({
+    Name = "claim tool",
+    Callback = function()
+        local Players = game:GetService("Players")
+        local player = Players.LocalPlayer
+        local character = player.Character or player.CharacterAdded:Wait()
+        local humanoidRootPart = character:WaitForChild("HumanoidRootPart")
+        local humanoid = character:WaitForChild("Humanoid")
+        local givers = workspace:WaitForChild("Interactables"):WaitForChild("Givers"):GetChildren()
+        for _, giver in ipairs(givers) do
+            local isMedkit = string.find(giver.Name:lower(), "medkit")
+            if selectedOption == "With Medkit" or not isMedkit then
+                local button = giver:FindFirstChild("Button", true)
+                if button and button:IsA("BasePart") then
+                    firetouchinterest(humanoidRootPart, button, 0)
+                    task.wait(0.1)
+                    firetouchinterest(humanoidRootPart, button, 1)
+                    task.wait(0.1)
+                end
+            end
+        end
+    end
+})
+
+Window:SelectTab(Tab1)
+local Paragraph = Tab4:AddParagraph({"BETA", "This is a beta script, might have bug"})
+local Section = Tab1:AddSection({"OP!"})
+local Section = Tab2:AddSection({"MOVEMENT"})
+
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+
+local player = Players.LocalPlayer
+local flySpeed = 16
+local flyEnabled = false
+local flying = false
+local bodyVelocity, bodyAngularVelocity, flyConnection, stateChangedConnection
+
+local function getCharacter()
+    return player.Character or player.CharacterAdded:Wait()
+end
+
+local function getRootPart()
+    local char = getCharacter()
+    return char:FindFirstChild("HumanoidRootPart") or char:FindFirstChild("Torso")
+end
+
+local function waitForControlModule()
+    local success, controlModule = pcall(function()
+        return require(player:WaitForChild("PlayerScripts"):WaitForChild("PlayerModule"):WaitForChild("ControlModule"))
+    end)
+    if success then return controlModule else return nil end
+end
+
+local function preventSitting()
+    local char = getCharacter()
+    local humanoid = char and char:FindFirstChildOfClass("Humanoid")
+    if humanoid and flyEnabled then
+        if stateChangedConnection then stateChangedConnection:Disconnect() end
+        stateChangedConnection = humanoid.StateChanged:Connect(function(old, new)
+            if flyEnabled then
+                if new == Enum.HumanoidStateType.Seated then
+                    task.spawn(function()
+                        task.wait(0.1)
+                        if flyEnabled and humanoid.Parent then
+                            humanoid:ChangeState(Enum.HumanoidStateType.Running)
+                        end
+                    end)
+                elseif old == Enum.HumanoidStateType.Seated and (new == Enum.HumanoidStateType.Jumping or new == Enum.HumanoidStateType.Running or new == Enum.HumanoidStateType.Freefall) then
+                    task.spawn(function()
+                        task.wait(0.2)
+                        if flyEnabled and humanoid.Parent then
+                            humanoid.PlatformStand = true
+                            if not flying then startFly() end
+                        end
+                    end)
+                end
+            end
+        end)
+    end
+end
+
+function startFly()
+    local char = getCharacter()
+    local root = getRootPart()
+    if not char or not root or not flyEnabled then return end
+    flying = true
+    if bodyVelocity then bodyVelocity:Destroy() end
+    if bodyAngularVelocity then bodyAngularVelocity:Destroy() end
+    bodyVelocity = Instance.new("BodyVelocity")
+    bodyVelocity.Velocity = Vector3.zero
+    bodyVelocity.MaxForce = Vector3.new(9e9, 9e9, 9e9)
+    bodyVelocity.Parent = root
+    bodyAngularVelocity = Instance.new("BodyAngularVelocity")
+    bodyAngularVelocity.AngularVelocity = Vector3.zero
+    bodyAngularVelocity.MaxTorque = Vector3.new(4000, 4000, 4000)
+    bodyAngularVelocity.Parent = root
+    local humanoid = char:FindFirstChildOfClass("Humanoid")
+    if humanoid then
+        for _, track in pairs(humanoid:GetPlayingAnimationTracks()) do track:Stop() end
+        task.wait(0.1)
+        humanoid.PlatformStand = true
+        root.CFrame = CFrame.new(root.Position, root.Position + Vector3.new(0, 0, -1))
+        preventSitting()
+    end
+    local controlModule = waitForControlModule()
+    if flyConnection then flyConnection:Disconnect() end
+    flyConnection = RunService.Heartbeat:Connect(function()
+        if not flyEnabled or not flying or not root or not root.Parent then return end
+        local humanoid = char:FindFirstChildOfClass("Humanoid")
+        if humanoid and not humanoid.PlatformStand then humanoid.PlatformStand = true end
+        local camera = workspace.CurrentCamera
+        local moveVec = Vector3.zero
+        if controlModule then moveVec = controlModule:GetMoveVector() end
+        local targetVelocity = Vector3.zero
+        if moveVec.Magnitude > 0 then
+            local cameraCFrame = camera.CFrame
+            local direction = cameraCFrame:VectorToWorldSpace(moveVec)
+            targetVelocity = direction.Unit * flySpeed
+        end
+        if bodyVelocity then
+            bodyVelocity.Velocity = bodyVelocity.Velocity:Lerp(targetVelocity, 0.25)
+        end
+        if flyEnabled and flying and bodyAngularVelocity then
+            local lookDirection = camera.CFrame.LookVector
+            local targetCFrame = CFrame.lookAt(root.Position, root.Position + lookDirection)
+            root.CFrame = root.CFrame:Lerp(targetCFrame, 0.12)
+            bodyAngularVelocity.AngularVelocity = Vector3.zero
+        end
+        if targetVelocity.Magnitude == 0 then
+            if bodyVelocity then bodyVelocity.Velocity = Vector3.zero end
+            root.AssemblyLinearVelocity = Vector3.zero
+        end
+    end)
+end
+
+function stopFly()
+    flying = false
+    if flyConnection then flyConnection:Disconnect() flyConnection = nil end
+    if bodyVelocity then bodyVelocity:Destroy() bodyVelocity = nil end
+    if bodyAngularVelocity then bodyAngularVelocity:Destroy() bodyAngularVelocity = nil end
+    if stateChangedConnection then stateChangedConnection:Disconnect() stateChangedConnection = nil end
+    local char = getCharacter()
+    local humanoid = char and char:FindFirstChildOfClass("Humanoid")
+    if humanoid then humanoid.PlatformStand = false end
+end
+
+function autoFlyOnRespawn()
+    local char = player.Character or player.CharacterAdded:Wait()
+    local root = char:WaitForChild("HumanoidRootPart", 10)
+    local humanoid = char:WaitForChild("Humanoid", 10)
+    if not root or not humanoid then return end
+    task.wait(3)
+    if flyEnabled then task.wait(1) startFly() end
+end
+
+flyEnabled = false
+flying = false
+
+player.CharacterRemoving:Connect(function()
+    flying = false
+    if flyConnection then flyConnection:Disconnect() flyConnection = nil end
+    if bodyVelocity then bodyVelocity:Destroy() bodyVelocity = nil end
+    if bodyAngularVelocity then bodyAngularVelocity:Destroy() bodyAngularVelocity = nil end
+    if stateChangedConnection then stateChangedConnection:Disconnect() stateChangedConnection = nil end
+end)
+
+player.CharacterAdded:Connect(function()
+    if flyEnabled then task.spawn(autoFlyOnRespawn) end
+end)
+
+Tab2:AddToggle({
+    Name = "Fly",
+    Description = "Toggle Flying Mode (version 1.2)",
+    Default = false,
+    Callback = function(Value)
+        flyEnabled = Value
+        if flyEnabled then startFly() else stopFly() end
+    end
+})
+
+Tab2:AddSlider({
+    Name = "Fly Speed",
+    Description = "Your Fly Speed!",
+    Min = 16, Max = 200, Increase = 1, Default = 16,
+    Callback = function(Value) flySpeed = Value end
+})
+
+local SpeedValue = 16
+local JumpPowerValue = 50
+local LoopEnabled = false
+
+Tab2:AddSlider({
+    Name = "Client Speed",
+    Description = "Your Speed!",
+    Min = 16, Max = 200, Increase = 1, Default = 16,
+    Callback = function(Value) SpeedValue = Value end
+})
+
+Tab2:AddSlider({
+    Name = "Client JumpPower",
+    Description = "Your Jump Power!",
+    Min = 50, Max = 200, Increase = 1, Default = 50,
+    Callback = function(Value) JumpPowerValue = Value end
+})
+
+Tab2:AddToggle({
+    Name = "Speed/Jump Loop",
+    Description = "Enable/Disable automatic speed/jump maintenance",
+    Default = false,
+    Callback = function(Value) LoopEnabled = Value end
+})
+
+local Section = Tab2:AddSection({"CLIENT"})
+
+local dropMode = "All Tools"
+
+Tab2:AddDropdown({
+    Name = "Drop Mode",
+    Options = {"Holding Only", "All Tools"},
+    Default = "All Tools",
+    Callback = function(option) dropMode = option end
+})
+
+Tab2:AddButton({
+    Name = "Drop Tool",
+    Callback = function()
+        local Backpack = LocalPlayer:FindFirstChildOfClass("Backpack")
+        if dropMode == "Holding Only" then
+            for _, tool in ipairs(LocalPlayer.Character:GetChildren()) do
+                if tool:IsA("Tool") then tool.Parent = workspace end
+            end
+        elseif dropMode == "All Tools" then
+            if Backpack then
+                for _, tool in ipairs(Backpack:GetChildren()) do
+                    if tool:IsA("Tool") then tool.Parent = LocalPlayer.Character end
+                end
+            end
+            task.wait()
+            for _, tool in ipairs(LocalPlayer.Character:GetChildren()) do
+                if tool:IsA("Tool") then tool.Parent = workspace end
+            end
+        end
+    end
+})
+
+Tab2:AddButton({
+    Name = "Fixcam",
+    Description = "fix the camera bug on mobile device",
+    Callback = function()
+        local speaker = Players.LocalPlayer
+        local Camera = workspace.CurrentCamera
+        Camera:Destroy()
+        wait(0.1)
+        repeat wait() until speaker.Character and speaker.Character:FindFirstChildWhichIsA("Humanoid")
+        Camera = workspace.CurrentCamera
+        Camera.CameraSubject = speaker.Character:FindFirstChildWhichIsA("Humanoid")
+        Camera.CameraType = Enum.CameraType.Custom
+        speaker.CameraMinZoomDistance = 0.5
+        speaker.CameraMaxZoomDistance = 400
+        speaker.CameraMode = Enum.CameraMode.Classic
+        local head = speaker.Character:FindFirstChild("Head")
+        if head then head.Anchored = false end
+    end
+})
+
+player.CharacterAdded:Connect(function(char)
+    local humanoid = char:WaitForChild("Humanoid")
+    humanoid.WalkSpeed = SpeedValue
+    humanoid.JumpPower = JumpPowerValue
+end)
+
+task.spawn(function()
+    while true do
+        task.wait(1)
+        if LoopEnabled then
+            local char = player.Character
+            if char then
+                local humanoid = char:FindFirstChildOfClass("Humanoid")
+                if humanoid then
+                    if humanoid.WalkSpeed ~= SpeedValue then humanoid.WalkSpeed = SpeedValue end
+                    if humanoid.JumpPower ~= JumpPowerValue then humanoid.JumpPower = JumpPowerValue end
+                end
+            end
+        end
+    end
+end)
+
+local antiTrapConnections = {}
+local antiTrapOriginalStates = {}
+local antiTrapEnabled = false
+
+local function makeSafe(part)
+    if part:IsA("BasePart") then
+        if not antiTrapOriginalStates[part] then
+            antiTrapOriginalStates[part] = {CanTouch = part.CanTouch, CanCollide = part.CanCollide}
+        end
+        part.CanTouch = false
+        part.CanCollide = false
+    end
+end
+
+local function restoreStates()
+    for part, state in pairs(antiTrapOriginalStates) do
+        if part and part:IsDescendantOf(workspace) then
+            part.CanTouch = state.CanTouch
+            part.CanCollide = state.CanCollide
+        end
+    end
+    antiTrapOriginalStates = {}
+end
+
+local function handlePart(part)
+    local name = part.Name:lower()
+    if string.find(name, "laser") or string.find(name, "spike") or string.find(name, "fire") or string.find(name, "z#4fzo0") then
+        makeSafe(part)
+    end
+end
+
+local function startAntiTrap()
+    for _, plate in pairs(workspace.Plates:GetChildren()) do
+        for _, obj in ipairs(plate:GetDescendants()) do handlePart(obj) end
+        local conn = plate.DescendantAdded:Connect(function(obj)
+            if antiTrapEnabled then handlePart(obj) end
+        end)
+        table.insert(antiTrapConnections, conn)
+    end
+    local conn = workspace.Plates.ChildAdded:Connect(function(plate)
+        for _, obj in ipairs(plate:GetDescendants()) do handlePart(obj) end
+        local sub = plate.DescendantAdded:Connect(function(obj)
+            if antiTrapEnabled then handlePart(obj) end
+        end)
+        table.insert(antiTrapConnections, sub)
+    end)
+    table.insert(antiTrapConnections, conn)
+end
+
+local function stopAntiTrap()
+    for _, conn in ipairs(antiTrapConnections) do
+        if typeof(conn) == "RBXScriptConnection" then conn:Disconnect() end
+    end
+    antiTrapConnections = {}
+    restoreStates()
+end
+
+Tab2:AddToggle({
+    Name = "Anti Deadly Machines",
+    Description = "Anti Deadly Machines (spike, fire, etc)",
+    Default = false,
+    Callback = function(Value)
+        antiTrapEnabled = Value
+        if Value then startAntiTrap() else stopAntiTrap() end
+    end
+})
+
+local AutoKillEnabled = false
+
+Tab1:AddToggle({
+    Name = "Bug Hammer",
+    Description = "Destroy a Building by use a delete tool",
+    Default = false,
+    Callback = function(Value) AutoKillEnabled = Value end
+})
+
+local LServices = {
+    ReplicatedStorage = game:GetService("ReplicatedStorage"),
+    UserInputService = game:GetService("UserInputService"),
+    Workspace = game:GetService("Workspace"),
+    Players = game:GetService("Players")
+}
+
+local LPlayer2 = LServices.Players.LocalPlayer
+local Variables = {
+    Remotes = LServices.ReplicatedStorage.Remotes,
+    Plates = LServices.Workspace.Plates,
+    CurrentTarget = nil
+}
+
+Variables.StampAsset = Variables.Remotes.StampAsset
+Variables.DeleteAsset = Variables.Remotes.DeleteAsset
+
+for _, Plate in pairs(Variables.Plates:GetChildren()) do
+    if Plate.Owner.Value == LPlayer2 then
+        Variables.LPlate = Plate.Plate
+        Variables.ActiveParts = Plate.ActiveParts
+        break
+    end
+end
+
+local BugModule = {}
+
+function BugModule.IsHoldingValidTool()
+    local character = LPlayer2.Character
+    return character and character:FindFirstChild("2 Delete") ~= nil
+end
+
+function BugModule.Kill(Target)
+    if not (AutoKillEnabled and BugModule.IsHoldingValidTool()) then return end
+    if Target and Target:IsA("Player") then
+        Target = Target.Character and Target.Character.PrimaryPart
+    end
+    if Target then
+        Variables.StampAsset:InvokeServer(
+            41324945,
+            Variables.LPlate.CFrame - Vector3.new(0, 8.99991e14, 0),
+            "{99ab22df-ca29-4143-a2fd-0a1b79db78c2}",
+            {Target},
+            0
+        )
+    end
+end
+
+local function HighlightTarget(Target)
+    if Variables.CurrentTarget and Variables.CurrentTarget:FindFirstChild("Highlight") then
+        Variables.CurrentTarget.Highlight:Destroy()
+    end
+    if Target and BugModule.IsHoldingValidTool() then
+        local Highlight = Instance.new("Highlight")
+        Highlight.Name = "Highlight"
+        Highlight.Parent = Target
+        Highlight.FillTransparency = 1
+        Highlight.OutlineColor = Color3.fromRGB(0, 255, 0)
+        Variables.CurrentTarget = Target
+    else
+        Variables.CurrentTarget = nil
+    end
+end
+
+local function HandleInput(Position)
+    if not (LPlayer2.Character and BugModule.IsHoldingValidTool()) then
+        HighlightTarget(nil)
+        return
+    end
+    local Camera = workspace.CurrentCamera
+    local RayParams = RaycastParams.new()
+    RayParams.FilterDescendantsInstances = {LPlayer2.Character}
+    RayParams.FilterType = Enum.RaycastFilterType.Blacklist
+    local RayOrigin = Camera.CFrame.Position
+    local RayDirection = (Camera:ScreenPointToRay(Position.X, Position.Y).Direction * 1000)
+    local Result = workspace:Raycast(RayOrigin, RayDirection, RayParams)
+    HighlightTarget(Result and Result.Instance or nil)
+end
+
+LServices.UserInputService.InputChanged:Connect(function(InputObject)
+    if InputObject.UserInputType == Enum.UserInputType.MouseMovement or InputObject.UserInputType == Enum.UserInputType.Touch then
+        HandleInput(Vector2.new(InputObject.Position.X, InputObject.Position.Y))
+    end
+end)
+
+LServices.UserInputService.InputBegan:Connect(function(InputObject, Processed)
+    if Processed then return end
+    if not BugModule.IsHoldingValidTool() then return end
+    if InputObject.UserInputType == Enum.UserInputType.MouseButton1 or InputObject.UserInputType == Enum.UserInputType.Touch then
+        BugModule.Kill(Variables.CurrentTarget)
+    end
+end)
+
+LPlayer2.Character.ChildRemoved:Connect(function(child)
+    if child.Name == "2 Delete" then HighlightTarget(nil) end
+end)
+
+local teleports = {
+    {"VIP", CFrame.new(-85.99878692626953, 17633.498046875, 9349.5361328125)},
+    {"Mega VIP", CFrame.new(-86.5157241821289, 17633.498046875, 9215.1953125)},
+    {"Uber VIP", CFrame.new(-108.00, 17634.06, 9020.00)},
+    {"Secret Island", CFrame.new(-21.291458129882812, 0.3889467120170593, -5553.3359375)},
+    {"Leaderboard", CFrame.new(0.46162018179893494, 24.500017166137695, -220.42832946777344)}
+}
+
+Tab3:AddDropdown({
+    Name = "Locations",
+    Options = {"VIP", "Mega VIP", "Uber VIP", "Secret Island", "Leaderboard"},
+    Callback = function(Selected)
+        for _, location in pairs(teleports) do
+            if location[1] == Selected then
+                if game.Players.LocalPlayer.Character then
+                    game.Players.LocalPlayer.Character:SetPrimaryPartCFrame(location[2])
+                end
+                break
+            end
+        end
+    end
+})
+
+local Section = Tab1:AddSection({"BUILDING"})
+
+local StampAssetEnabled = false
+local StampAssetTaskCount = 10
+local SelectedAssetId = 41324904
+
+local Assets = {
+    ["Moving Spike"] = 41324904,
+    ["Slate"] = 41324945,
+    ["Brick"] = 56450668,
+    ["Sand"] = 41324966,
+    ["Stables"] = 56447853,
+    ["Trapdoor - ice"] = 41324919
+}
+
+Tab1:AddDropdown({
+    Name = "Select Asset",
+    Options = {"Moving Spike", "Slate", "Brick", "Sand", "Stables", "Trapdoor - ice"},
+    Default = "Moving Spike",
+    Callback = function(selected) SelectedAssetId = Assets[selected] end
+})
+
+Tab1:AddSlider({
+    Name = "Stamp Asset Task/loop",
+    Min = 1, Max = 20, Increase = 1, Default = 1,
+    Callback = function(val) StampAssetTaskCount = val end
+})
+
+Tab1:AddToggle({
+    Name = "Loop Stamp Asset",
+    Default = false,
+    Callback = function(state)
+        StampAssetEnabled = state
+        task.spawn(function()
+            local Remotes = game:GetService("ReplicatedStorage"):WaitForChild("Remotes")
+            local StampAsset = Remotes:WaitForChild("StampAsset")
+            local Plates = game:GetService("Workspace"):WaitForChild("Plates")
+            local LPlayer = game:GetService("Players").LocalPlayer
+            local LPlate
+            for _, Plate in ipairs(Plates:GetChildren()) do
+                if Plate:FindFirstChild("Owner") and Plate.Owner.Value == LPlayer then
+                    LPlate = Plate:FindFirstChild("Plate")
+                    break
+                end
+            end
+            while StampAssetEnabled do
+                if LPlate then
+                    local basePos = LPlate.Position
+                    for i = 1, StampAssetTaskCount do
+                        task.spawn(function()
+                            local offsetX = math.random(-40, 40)
+                            local offsetZ = math.random(-40, 40)
+                            local offsetY = 200 + math.random(-10, 10)
+                            local stampPos = Vector3.new(basePos.X + offsetX, basePos.Y + offsetY, basePos.Z + offsetZ)
+                            StampAsset:InvokeServer(
+                                SelectedAssetId,
+                                CFrame.new(stampPos),
+                                "{3ee17b14-c66d-4cdd-8500-3782d1dceab5}",
+                                {},
+                                0
+                            )
+                        end)
+                    end
+                end
+                task.wait()
+            end
+        end)
+    end
+})
+
+local AutoClearEnabled = false
+local AutoClearDelay = 5
+local DeleteAsset = game:GetService("ReplicatedStorage"):WaitForChild("Remotes"):WaitForChild("DeleteAsset")
+
+Tab1:AddButton({
+    Name = "Clear Plate",
+    Description = "Clear Your Plate",
+    Callback = function()
+        local playerPlate = nil
+        for _, plate in pairs(workspace.Plates:GetChildren()) do
+            if plate:FindFirstChild("Owner") and plate.Owner.Value == LocalPlayer then
+                playerPlate = plate
+                break
+            end
+        end
+        if playerPlate and playerPlate:FindFirstChild("ActiveParts") then
+            for _, part in ipairs(playerPlate.ActiveParts:GetChildren()) do
+                task.spawn(function()
+                    pcall(function() DeleteAsset:InvokeServer(part) end)
+                end)
+            end
+        end
+    end
+})
+
+Tab1:AddSlider({
+    Name = "Auto Clear Delay",
+    Description = "1 = 1 second",
+    Min = 1, Max = 20, Increase = 1, Default = 5,
+    Callback = function(val) AutoClearDelay = val end
+})
+
+Tab1:AddToggle({
+    Name = "Auto Clear Plate",
+    Description = "Loop Clear By Enable This Toggle",
+    Default = false,
+    Callback = function(state)
+        AutoClearEnabled = state
+        task.spawn(function()
+            while AutoClearEnabled do
+                local playerPlate = nil
+                for _, plate in pairs(workspace.Plates:GetChildren()) do
+                    if plate:FindFirstChild("Owner") and plate.Owner.Value == LocalPlayer then
+                        playerPlate = plate
+                        break
+                    end
+                end
+                if playerPlate and playerPlate:FindFirstChild("ActiveParts") then
+                    for _, part in ipairs(playerPlate.ActiveParts:GetChildren()) do
+                        task.spawn(function()
+                            pcall(function() DeleteAsset:InvokeServer(part) end)
+                        end)
+                    end
+                end
+                task.wait(AutoClearDelay)
+            end
+        end)
+    end
+})
+
+local Section = Tab3:AddSection({"BRING"})
+
+local BringRemotes = game:GetService("ReplicatedStorage"):WaitForChild("Remotes")
+local BringStampAsset = BringRemotes:WaitForChild("StampAsset")
+local BringDeleteAsset = BringRemotes:WaitForChild("DeleteAsset")
+local BringPlates = workspace:WaitForChild("Plates")
+local BringLPlate, BringActiveParts
+
+for _, Plate in pairs(BringPlates:GetChildren()) do
+    if Plate:FindFirstChild("Owner") and Plate.Owner.Value == LocalPlayer then
+        BringLPlate = Plate:FindFirstChild("Plate")
+        BringActiveParts = Plate:FindFirstChild("ActiveParts")
+        break
+    end
+end
+
+local BringTargetName = ""
+
+Tab3:AddTextBox({
+    Name = "Bring Target",
+    PlaceholderText = "Enter partial name",
+    Description = "Enter Target Name Here",
+    Callback = function(Value) BringTargetName = Value:lower() end
+})
+
+Tab3:AddButton({
+    Name = "Bring",
+    Description = "Start Bring",
+    Callback = function()
+        if not BringLPlate or BringTargetName == "" then return end
+        for _, Player in pairs(game:GetService("Players"):GetPlayers()) do
+            if Player ~= LocalPlayer and (Player.Name:lower():find(BringTargetName) or Player.DisplayName:lower():find(BringTargetName)) then
+                local Char = Player.Character
+                local Humanoid = Char and Char:FindFirstChildWhichIsA("Humanoid")
+                if Char and Char:FindFirstChild("HumanoidRootPart") and Humanoid then
+                    while Humanoid.Sit do task.wait(0.1) end
+                    pcall(function()
+                        BringStampAsset:InvokeServer(
+                            41324912,
+                            BringLPlate.CFrame + Vector3.new(0, -20, 0),
+                            "{99ab22df-ca29-4143-a2fd-0a1b79db78c2}",
+                            {Char.HumanoidRootPart},
+                            0
+                        )
+                    end)
+                    task.delay(0.5, function()
+                        pcall(function()
+                            if LocalPlayer.Character and LocalPlayer.Character:GetPivot() then
+                                Char:PivotTo(LocalPlayer.Character:GetPivot())
+                            end
+                        end)
+                        task.wait(0.1)
+                        if BringActiveParts then
+                            for _, part in ipairs(BringActiveParts:GetChildren()) do
+                                if part.Name == "Trapdoor - Grass" then
+                                    task.spawn(function()
+                                        pcall(function() BringDeleteAsset:InvokeServer(part) end)
+                                    end)
+                                end
+                            end
+                        end
+                    end)
+                end
+            end
+        end
+    end
+})
+
+local Section = Tab3:AddSection({"HARDCORE"})
+
+-- Secret Island Jail (fixed)
+local jailRunning = false
+local SecretIslandCFrame = CFrame.new(-21.291458129882812, 0.3889467120170593, -5553.3359375)
+local JailStampAsset = game:GetService("ReplicatedStorage"):WaitForChild("Remotes"):WaitForChild("StampAsset")
+local JailDeleteAsset = game:GetService("ReplicatedStorage"):WaitForChild("Remotes"):WaitForChild("DeleteAsset")
+local JailPlates = workspace:WaitForChild("Plates")
+
+local function GetJailPlate()
+    for _, Plate in pairs(JailPlates:GetChildren()) do
+        if Plate:FindFirstChild("Owner") and Plate.Owner.Value == LocalPlayer then
+            return Plate:FindFirstChild("Plate"), Plate:FindFirstChild("ActiveParts")
+        end
+    end
+    return nil, nil
+end
+
+local function CleanJailStamps(ActiveParts)
+    if not ActiveParts then return end
+    for _, part in ipairs(ActiveParts:GetChildren()) do
+        if part.Name == "Trapdoor - Grass" or part.Name == "Stone - Block" then
+            task.spawn(function()
+                pcall(function() JailDeleteAsset:InvokeServer(part) end)
+            end)
+        end
+    end
+end
+
+local function JailLoop()
+    while jailRunning do
+        local LPlate, ActiveParts = GetJailPlate()
+        if LPlate then
+            for _, plr in pairs(Players:GetPlayers()) do
+                if plr ~= LocalPlayer and plr.Character then
+                    local hrp = plr.Character:FindFirstChild("HumanoidRootPart")
+                    if hrp then
+                        task.spawn(function()
+                            pcall(function()
+                                JailStampAsset:InvokeServer(
+                                    41324912,
+                                    SecretIslandCFrame,
+                                    "{99ab22df-ca29-4143-a2fd-0a1b79db78c2}",
+                                    {hrp},
+                                    0
+                                )
+                            end)
+                            task.wait(0.3)
+                            CleanJailStamps(ActiveParts)
+                        end)
+                    end
+                end
+            end
+        end
+        task.wait(0.5)
+    end
+end
+
+Tab3:AddToggle({
+    Name = "Secret Island Jail",
+    Description = "Teleports all players to Secret Island continuously",
+    Default = false,
+    Callback = function(state)
+        jailRunning = state
+        if state then task.spawn(JailLoop) end
+    end
+})
+
+local antiflingConn
+Tab2:AddToggle({
+    Name = "Anti Fling",
+    Description = "From Infinite yield source",
+    Default = true,
+    Callback = function(state)
+        if antiflingConn then antiflingConn:Disconnect() antiflingConn = nil end
+        if state then
+            antiflingConn = RunService.Stepped:Connect(function()
+                for _, p in pairs(Players:GetPlayers()) do
+                    if p ~= LocalPlayer and p.Character then
+                        for _, v in pairs(p.Character:GetDescendants()) do
+                            if v:IsA("BasePart") then v.CanCollide = false end
+                        end
+                    end
+                end
+            end)
+        end
+    end
+})
+
+local noclipConn
+local noclipEnabled = false
+
+local function enableNoclip()
+    if noclipConn then noclipConn:Disconnect() end
+    noclipConn = RunService.Stepped:Connect(function()
+        local char = LocalPlayer.Character
+        if char then
+            for _, part in pairs(char:GetDescendants()) do
+                if part:IsA("BasePart") then part.CanCollide = false end
+            end
+        end
+    end)
+end
+
+local function disableNoclip()
+    if noclipConn then noclipConn:Disconnect() noclipConn = nil end
+    local char = LocalPlayer.Character
+    if char then
+        for _, part in pairs(char:GetDescendants()) do
+            if part:IsA("BasePart") then part.CanCollide = true end
+        end
+    end
+end
+
+Tab2:AddToggle({
+    Name = "Noclip",
+    Description = "From Infinite yield source",
+    Default = true,
+    Callback = function(state)
+        noclipEnabled = state
+        if state then enableNoclip() else disableNoclip() end
+    end
+})
+
+LocalPlayer.CharacterAdded:Connect(function()
+    if noclipEnabled then task.wait(1) enableNoclip() end
+end)
+
+local VirtualUser = game:GetService("VirtualUser")
+local Section = Tab4:AddSection({"SETTING"})
+
+Tab4:AddDropdown({
+    Name = "UI Scale",
+    Flag = "ScaleDropdown",
+    Options = {"0.75", "1", "1.25"},
+    Default = "1",
+    Save = true,
+    Callback = function(selected)
+        local scaleValue = tonumber(selected)
+        if not scaleValue then return end
+        local CoreGui = game:GetService("CoreGui")
+        local gui = CoreGui:FindFirstChild("redz Library V5")
+        if gui then
+            for _, child in ipairs(gui:GetChildren()) do
+                if child:IsA("UIScale") then child:Destroy() end
+            end
+            local newScale = Instance.new("UIScale")
+            newScale.Scale = scaleValue
+            newScale.Parent = gui
+        end
+    end
+})
+
+local antiAfkConn
+Tab4:AddToggle({
+    Name = "Anti AFK",
+    Default = true,
+    Callback = function(state)
+        if antiAfkConn then antiAfkConn:Disconnect() antiAfkConn = nil end
+        if state then
+            local GC = getconnections or get_signal_cons
+            if GC then
+                for i, v in pairs(GC(LocalPlayer.Idled)) do
+                    if v.Disable then v:Disable()
+                    elseif v.Disconnect then v:Disconnect() end
+                end
+            else
+                antiAfkConn = LocalPlayer.Idled:Connect(function()
+                    VirtualUser:CaptureController()
+                    VirtualUser:ClickButton2(Vector2.new())
+                end)
+            end
+        end
+    end
+})
+
+Tab4:AddButton({
+    Name = "ServerHop",
+    Callback = function()
+        while true do
+            local TeleportService = game:GetService("TeleportService")
+            local PlaceId = game.PlaceId
+            local JobId = game.JobId
+            local success, response = pcall(function()
+                return syn and syn.request or http_request or request or http and http.request or nil
+            end)
+            if not success or not response then return end
+            local req = response({
+                Url = ("https://games.roblox.com/v1/games/%d/servers/Public?sortOrder=Desc&limit=100&excludeFullGames=true"):format(PlaceId),
+                Method = "GET"
+            })
+            local body = HttpService:JSONDecode(req.Body)
+            if body and body.data then
+                for _, server in ipairs(body.data) do
+                    if server.id ~= JobId and server.playing < server.maxPlayers then
+                        TeleportService:TeleportToPlaceInstance(PlaceId, server.id, LocalPlayer)
+                        return
+                    end
+                end
+            end
+        end
+    end
+})
+
+Tab1:AddSection({"VOID"})
+
+local VoidRemotes = game:GetService("ReplicatedStorage"):WaitForChild("Remotes")
+local VoidStampAsset = VoidRemotes:WaitForChild("StampAsset")
+local VoidPlates = workspace:WaitForChild("Plates")
+local voidRunning = false
+local voidTargetNames = {"", "", ""}
+local voidStampCount = 1
+
+for i = 1, 3 do
+    Tab1:AddTextBox({
+        Name = "VoidTarget" .. i,
+        PlaceholderText = "Enter partial name",
+        Callback = function(value) voidTargetNames[i] = value:lower() end
+    })
+end
+
+Tab1:AddSlider({
+    Name = "Stamp task/loop",
+    Min = 1, Max = 5, Default = 1, Increment = 1, ValueName = "times",
+    Callback = function(value) voidStampCount = value end
+})
+
+Tab1:AddToggle({
+    Name = "LoopVoidTarget",
+    Description = "Void stamp matching players continuously",
+    Default = false,
+    Callback = function(Value)
+        voidRunning = Value
+        if voidRunning then
+            task.spawn(function()
+                while voidRunning do
+                    local VoidLPlate = nil
+                    for _, Plate in pairs(VoidPlates:GetChildren()) do
+                        if Plate:FindFirstChild("Owner") and Plate.Owner.Value == LocalPlayer then
+                            VoidLPlate = Plate:FindFirstChild("Plate")
+                            break
+                        end
+                    end
+                    if VoidLPlate then
+                        for _, p in ipairs(Players:GetPlayers()) do
+                            if allowedUsers[p.Name] and not allowedUsers[LocalPlayer.Name] then continue end
+                            local uname = p.Name:lower()
+                            local dname = p.DisplayName:lower()
+                            for _, targetName in ipairs(voidTargetNames) do
+                                if targetName ~= "" and (uname:sub(1, #targetName) == targetName or dname:sub(1, #targetName) == targetName) then
+                                    if p.Character and p.Character.PrimaryPart then
+                                        for i = 1, voidStampCount do
+                                            VoidStampAsset:InvokeServer(
+                                                41324945,
+                                                VoidLPlate.CFrame - Vector3.new(0, 8999999488, 0),
+                                                "{99ab22df-ca29-4143-a2fd-0a1b79db78c2}",
+                                                {p.Character.PrimaryPart},
+                                                0
+                                            )
+                                            task.wait(0.05)
+                                        end
+                                    end
+                                    break
+                                end
+                            end
+                        end
+                    end
+                    task.wait(0.2)
+                end
+            end)
+        end
+    end
+})
+
+local healRunning = false
+Tab2:AddToggle({
+    Name = "Auto HealPad",
+    Description = "spam touch all HealPads to heal",
+    Default = false,
+    Callback = function(state)
+        healRunning = state
+        if healRunning then
+            local pads = workspace.Interactables.HealPads:GetChildren()
+            local totalPads = #pads
+            local tasksCount = 5
+            local function touchPadLoop(startIdx, endIdx)
+                local hrp = LocalPlayer.Character:WaitForChild("HumanoidRootPart")
+                while healRunning and hrp do
+                    for i = startIdx, math.min(endIdx, totalPads) do
+                        local pad = pads[i]
+                        if pad then
+                            firetouchinterest(hrp, pad, 0)
+                            task.wait(0.0001)
+                            firetouchinterest(hrp, pad, 1)
+                            task.wait(0.0001)
+                        end
+                    end
+                    task.wait(0.1)
+                end
+            end
+            local groupSize = math.ceil(totalPads / tasksCount)
+            for taskNum = 1, tasksCount do
+                local startIdx = (taskNum - 1) * groupSize + 1
+                local endIdx = taskNum * groupSize
+                task.spawn(function() touchPadLoop(startIdx, endIdx) end)
+            end
+        end
+    end
+})
+
+local Section = Tab2:AddSection({"FREEZE"})
+
+local FreezeRemotes = game:GetService("ReplicatedStorage"):WaitForChild("Remotes")
+local FreezeStampAsset = FreezeRemotes:WaitForChild("StampAsset")
+local FreezePlates = workspace:WaitForChild("Plates")
+local freezeTargetName = ""
+
+Tab2:AddTextBox({
+    Name = "Freeze",
+    PlaceholderText = "Enter partial name",
+    Callback = function(value) freezeTargetName = value:lower() end
+})
+
+Tab2:AddButton({
+    Name = "Freeze Target",
+    Callback = function()
+        local FreezeLPlate = nil
+        for _, Plate in pairs(FreezePlates:GetChildren()) do
+            if Plate:FindFirstChild("Owner") and Plate.Owner.Value == LocalPlayer then
+                FreezeLPlate = Plate:FindFirstChild("Plate")
+                break
+            end
+        end
+        if not FreezeLPlate or freezeTargetName == "" then return end
+        for _, p in pairs(Players:GetPlayers()) do
+            local uname = p.Name:lower()
+            local dname = p.DisplayName:lower()
+            if uname:sub(1, #freezeTargetName) == freezeTargetName or dname:sub(1, #freezeTargetName) == freezeTargetName then
+                if allowedUsers[p.Name] and not allowedUsers[LocalPlayer.Name] then continue end
+                if p.Character and p.Character.PrimaryPart then
+                    FreezeStampAsset:InvokeServer(
+                        56447956,
+                        FreezeLPlate.CFrame - Vector3.new(0, 99, 0),
+                        "{99ab22df-ca29-4143-a2fd-0a1b79db78c2}",
+                        {p.Character.PrimaryPart},
+                        0
+                    )
+                end
+                break
+            end
+        end
+    end
+})
+
+local Section = Tab2:AddSection({"HANG"})
+
+local HangRemotes = game:GetService("ReplicatedStorage"):WaitForChild("Remotes")
+local HangStampAsset = HangRemotes:WaitForChild("StampAsset")
+local HangPlates = workspace:WaitForChild("Plates")
+local hangRunning = false
+local hangTargetNames = {"", "", ""}
+local hangStampCount = 1
+
+for i = 1, 3 do
+    Tab2:AddTextBox({
+        Name = "HangTarget" .. i,
+        PlaceholderText = "Enter partial name",
+        Callback = function(value) hangTargetNames[i] = value:lower() end
+    })
+end
+
+Tab2:AddSlider({
+    Name = "Stamp task/loop ",
+    Min = 1, Max = 5, Default = 1, Increment = 1, ValueName = "times",
+    Callback = function(value) hangStampCount = value end
+})
+
+Tab2:AddToggle({
+    Name = "LoopHangTarget",
+    Description = "Start Hang",
+    Default = false,
+    Callback = function(Value)
+        hangRunning = Value
+        if hangRunning then
+            task.spawn(function()
+                while hangRunning do
+                    local HangLPlate = nil
+                    for _, Plate in pairs(HangPlates:GetChildren()) do
+                        if Plate:FindFirstChild("Owner") and Plate.Owner.Value == LocalPlayer then
+                            HangLPlate = Plate:FindFirstChild("Plate")
+                            break
+                        end
+                    end
+                    if HangLPlate then
+                        for _, p in ipairs(Players:GetPlayers()) do
+                            if allowedUsers[p.Name] then continue end
+                            local uname = p.Name:lower()
+                            local dname = p.DisplayName:lower()
+                            for _, targetName in ipairs(hangTargetNames) do
+                                if targetName ~= "" and (uname:sub(1, #targetName) == targetName or dname:sub(1, #targetName) == targetName) then
+                                    if p.Character and p.Character.PrimaryPart then
+                                        for i = 1, hangStampCount do
+                                            HangStampAsset:InvokeServer(
+                                                41324945,
+                                                HangLPlate.CFrame - Vector3.new(0, 2.5, 0),
+                                                "{99ab22df-ca29-4143-a2fd-0a1b79db78c2}",
+                                                {p.Character.PrimaryPart},
+                                                0
+                                            )
+                                            task.wait(0.05)
+                                        end
+                                    end
+                                    break
+                                end
+                            end
+                        end
+                    end
+                    task.wait(0.2)
+                end
+            end)
+        end
+    end
+})
+
+Tab4:AddButton({
+    Name = "console",
+    Callback = function()
+        getrenv().game:GetService("StarterGui"):SetCore("DevConsoleVisible", true)
+    end
+})
+
+Tab4:AddParagraph({"YO", "did you know? 2011Wonka and Novax was here!"})
