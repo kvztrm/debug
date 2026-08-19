@@ -5,9 +5,9 @@
     Game: NUKE! Build and Battle (Roblox)
     Framework: Rayfield UI Library
     
-    Fix: getPlateBaseY and getPlateBoundsFromBase now scan all descendants
-    for large flat BaseParts instead of assuming a child named "Base".
-    Y anchor is now real — relativeY/targetY math was always correct.
+    Fix: Build order is now sorted ascending by source CFrame Y before stamping.
+    Lowest blocks stamp first — each layer has a surface to connect to before
+    the layer above it arrives. Prevents mid-air blocks from falling.
     ================================================================================
 ]]
 
@@ -86,8 +86,6 @@ local BlockDatabase = {
     ["block - black"] = { AssetId = 56453053, Uuid = "{673e542a-24c6-4b26-8f2f-9dcd191bf9a6}" }
 }
 
--- Scans all descendants for large flat BaseParts (plate floor geometry).
--- Returns the top-face Y of the largest qualifying part found.
 local function getPlateBaseY(plate)
     local bestTopY = nil
     local bestArea = 0
@@ -103,16 +101,10 @@ local function getPlateBaseY(plate)
     end
 
     if bestTopY then return bestTopY end
-
-    -- Last resort: use PrimaryPart position
-    if plate.PrimaryPart then
-        return plate.PrimaryPart.Position.Y
-    end
-
+    if plate.PrimaryPart then return plate.PrimaryPart.Position.Y end
     return 0
 end
 
--- Same descendant scan for XZ bounds — picks the largest flat part.
 local function getPlateBoundsFromBase(plate)
     local bestArea = 0
     local bestPart = nil
@@ -163,7 +155,7 @@ PlotDropdown = Tab:CreateDropdown({
 })
 
 Tab:CreateButton({
-    Name = "Mirror & Build (Edge-to-Edge Bounds)",
+    Name = "Mirror & Build (Layer-First, Ground-Up)",
     Callback = function()
         if not selectedPlotName or selectedPlotName == "Scanning..." or selectedPlotName == "No Available Plots" then
             Rayfield:Notify({Title = "Error", Content = "Please select a valid plot first!", Duration = 3})
@@ -231,6 +223,11 @@ Tab:CreateButton({
                 return
             end
 
+            -- ── Sort ascending by Y — lowest layer stamps first ──────────────────
+            table.sort(validPartsData, function(a, b)
+                return a.CFrame.Y < b.CFrame.Y
+            end)
+
             -- ── Target plate bounds ──────────────────────────────────────────────
             local myMinX, myMaxX = math.huge, -math.huge
             local myMinZ, myMaxZ = math.huge, -math.huge
@@ -254,24 +251,33 @@ Tab:CreateButton({
                 myMinX, myMaxX, myMinZ, myMaxZ = getPlateBoundsFromBase(myPlate)
             end
 
-            print("--- Starting Edge-Matched Build Process ---")
+            print("--- Starting Layer-First Build Process ---")
             print(string.format("Source base Y: %.2f | Target base Y: %.2f", sourceBaseY, myBaseY))
             print(string.format("Source bounds X[%.1f, %.1f] Z[%.1f, %.1f]", minX, maxX, minZ, maxZ))
             print(string.format("Target bounds X[%.1f, %.1f] Z[%.1f, %.1f]", myMinX, myMaxX, myMinZ, myMaxZ))
+            print(string.format("Total blocks to stamp: %d", #validPartsData))
 
             local count = 0
+            local currentLayerY = nil
+            local LAYER_PAUSE = 0.3 -- seconds to let the server settle between distinct Y layers
 
-            -- ── Project and stamp ────────────────────────────────────────────────
+            -- ── Project and stamp, ground-up ────────────────────────────────────
             for _, data in ipairs(validPartsData) do
                 local cf = data.CFrame
+
+                -- When Y changes to a new layer, pause briefly so the server
+                -- registers the previous layer as anchored before the next arrives
+                local roundedY = math.round(cf.Y * 10) / 10
+                if currentLayerY ~= nil and math.abs(roundedY - currentLayerY) > 0.5 then
+                    task.wait(LAYER_PAUSE)
+                end
+                currentLayerY = roundedY
 
                 local xRatio = (maxX ~= minX) and (cf.X - minX) / (maxX - minX) or 0.5
                 local zRatio = (maxZ ~= minZ) and (cf.Z - minZ) / (maxZ - minZ) or 0.5
 
                 local targetX = myMinX + (xRatio * (myMaxX - myMinX))
                 local targetZ = myMinZ + (zRatio * (myMaxZ - myMinZ))
-
-                -- Height relative to source floor, re-anchored to target floor
                 local relativeY = cf.Y - sourceBaseY
                 local targetY = myBaseY + relativeY
 
@@ -308,7 +314,7 @@ Tab:CreateButton({
             print("--- Build Complete. Total:", count, "---")
             Rayfield:Notify({
                 Title = "Success",
-                Content = "Edge-matched build complete! Built " .. count .. " blocks.",
+                Content = "Layer-first build complete! Built " .. count .. " blocks.",
                 Duration = 4
             })
         end)
