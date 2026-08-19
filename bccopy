@@ -5,10 +5,9 @@
     Game: NUKE! Build and Battle (Roblox)
     Framework: Rayfield UI Library
     
-    Fix: Edge-to-Edge boundary projection corrected.
-    - Y is now relative to source plate base Y, re-anchored to target plate base Y.
-    - Boundary fallback reads actual Base part Size instead of assuming 96 studs.
-    - CFrame decomposition variables are properly local.
+    Fix: getPlateBaseY and getPlateBoundsFromBase now scan all descendants
+    for large flat BaseParts instead of assuming a child named "Base".
+    Y anchor is now real — relativeY/targetY math was always correct.
     ================================================================================
 ]]
 
@@ -87,27 +86,55 @@ local BlockDatabase = {
     ["block - black"] = { AssetId = 56453053, Uuid = "{673e542a-24c6-4b26-8f2f-9dcd191bf9a6}" }
 }
 
--- Returns the world-space Y of the plate's base surface (top face of Base part)
+-- Scans all descendants for large flat BaseParts (plate floor geometry).
+-- Returns the top-face Y of the largest qualifying part found.
 local function getPlateBaseY(plate)
-    local base = plate:FindFirstChild("Base") or plate.PrimaryPart
-    if base then
-        -- Top surface Y = center Y + half height
-        return base.Position.Y + (base.Size.Y / 2)
+    local bestTopY = nil
+    local bestArea = 0
+
+    for _, part in ipairs(plate:GetDescendants()) do
+        if part:IsA("BasePart") and part.Size.X > 10 and part.Size.Z > 10 then
+            local area = part.Size.X * part.Size.Z
+            if area > bestArea then
+                bestArea = area
+                bestTopY = part.Position.Y + (part.Size.Y / 2)
+            end
+        end
     end
+
+    if bestTopY then return bestTopY end
+
+    -- Last resort: use PrimaryPart position
+    if plate.PrimaryPart then
+        return plate.PrimaryPart.Position.Y
+    end
+
     return 0
 end
 
--- Returns boundary extent for an empty plate derived from Base part size
+-- Same descendant scan for XZ bounds — picks the largest flat part.
 local function getPlateBoundsFromBase(plate)
-    local base = plate:FindFirstChild("Base") or plate.PrimaryPart
-    if base then
-        local cx = base.Position.X
-        local cz = base.Position.Z
-        local hx = base.Size.X / 2
-        local hz = base.Size.Z / 2
+    local bestArea = 0
+    local bestPart = nil
+
+    for _, part in ipairs(plate:GetDescendants()) do
+        if part:IsA("BasePart") and part.Size.X > 10 and part.Size.Z > 10 then
+            local area = part.Size.X * part.Size.Z
+            if area > bestArea then
+                bestArea = area
+                bestPart = part
+            end
+        end
+    end
+
+    if bestPart then
+        local cx = bestPart.Position.X
+        local cz = bestPart.Position.Z
+        local hx = bestPart.Size.X / 2
+        local hz = bestPart.Size.Z / 2
         return cx - hx, cx + hx, cz - hz, cz + hz
     end
-    -- absolute last resort fallback
+
     return -48, 48, -48, 48
 end
 
@@ -164,11 +191,10 @@ Tab:CreateButton({
         end
 
         task.spawn(function()
-            -- ── Source plate: scan all valid parts ──────────────────────────────
+            -- ── Source plate scan ────────────────────────────────────────────────
             local minX, maxX = math.huge, -math.huge
             local minZ, maxZ = math.huge, -math.huge
             local sourceBaseY = getPlateBaseY(sourcePlate)
-
             local validPartsData = {}
 
             for _, model in ipairs(sourcePlate.ActiveParts:GetChildren()) do
@@ -205,7 +231,7 @@ Tab:CreateButton({
                 return
             end
 
-            -- ── Target plate: determine bounds ──────────────────────────────────
+            -- ── Target plate bounds ──────────────────────────────────────────────
             local myMinX, myMaxX = math.huge, -math.huge
             local myMinZ, myMaxZ = math.huge, -math.huge
             local myBaseY = getPlateBaseY(myPlate)
@@ -224,36 +250,31 @@ Tab:CreateButton({
                 end
             end
 
-            -- Empty plate: read actual Base part geometry instead of assuming 96 studs
             if not hasMyParts or myMinX == math.huge then
                 myMinX, myMaxX, myMinZ, myMaxZ = getPlateBoundsFromBase(myPlate)
             end
 
-            local count = 0
             print("--- Starting Edge-Matched Build Process ---")
             print(string.format("Source base Y: %.2f | Target base Y: %.2f", sourceBaseY, myBaseY))
             print(string.format("Source bounds X[%.1f, %.1f] Z[%.1f, %.1f]", minX, maxX, minZ, maxZ))
             print(string.format("Target bounds X[%.1f, %.1f] Z[%.1f, %.1f]", myMinX, myMaxX, myMinZ, myMaxZ))
 
-            -- ── Project each block onto the target plate ─────────────────────────
+            local count = 0
+
+            -- ── Project and stamp ────────────────────────────────────────────────
             for _, data in ipairs(validPartsData) do
                 local cf = data.CFrame
 
-                -- Normalize against source plate edges
                 local xRatio = (maxX ~= minX) and (cf.X - minX) / (maxX - minX) or 0.5
                 local zRatio = (maxZ ~= minZ) and (cf.Z - minZ) / (maxZ - minZ) or 0.5
 
-                -- Project onto target plate edges
                 local targetX = myMinX + (xRatio * (myMaxX - myMinX))
                 local targetZ = myMinZ + (zRatio * (myMaxZ - myMinZ))
 
-                -- FIX: Y is relative to source base, re-anchored to target base.
-                -- This preserves stacking height regardless of where each plate
-                -- sits in world space.
+                -- Height relative to source floor, re-anchored to target floor
                 local relativeY = cf.Y - sourceBaseY
                 local targetY = myBaseY + relativeY
 
-                -- Decompose rotation, inject corrected world position
                 local local_xx, local_yx, local_zx,
                       local_xy, local_yy, local_zy,
                       local_xz, local_yz, local_zz
@@ -284,7 +305,7 @@ Tab:CreateButton({
                 task.wait(0.08)
             end
 
-            print("--- Build Process Completed. Total Built:", count, "---")
+            print("--- Build Complete. Total:", count, "---")
             Rayfield:Notify({
                 Title = "Success",
                 Content = "Edge-matched build complete! Built " .. count .. " blocks.",
@@ -294,7 +315,7 @@ Tab:CreateButton({
     end,
 })
 
--- Background loop: refresh dropdown every 3 seconds
+-- Dropdown refresh loop
 task.spawn(function()
     while true do
         local newPlotOptions = {}
