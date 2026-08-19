@@ -1,0 +1,321 @@
+--[[ 
+    ================================================================================
+    PROJECT HANDOFF & CONTEXT NOTES
+    ================================================================================
+    Game: NUKE! Build and Battle (Roblox)
+    Framework: Rayfield UI Library
+    
+    Fix: Edge-to-Edge boundary projection corrected.
+    - Y is now relative to source plate base Y, re-anchored to target plate base Y.
+    - Boundary fallback reads actual Base part Size instead of assuming 96 studs.
+    - CFrame decomposition variables are properly local.
+    ================================================================================
+]]
+
+local Rayfield = loadstring(game:HttpGet('https://sirius.menu/rayfield'))()
+
+local Players = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local Workspace = game:GetService("Workspace")
+local LocalPlayer = Players.LocalPlayer
+
+local Window = Rayfield:CreateWindow({
+   Name = "NUKE! Build and Battle Hub",
+   LoadingTitle = "Plot Copier & Builder",
+   LoadingSubtitle = "by AI Collaborator",
+   ConfigurationSaving = { Enabled = false },
+   KeySystem = false
+})
+
+local Tab = Window:CreateTab("Auto Build", 4483362458)
+
+local selectedPlotName = nil
+local PlotDropdown
+
+local BlockDatabase = {
+    ["brick"] = { AssetId = 56450668, Uuid = "{60aa3a31-580d-4b8c-bfbe-f55bb2967473}" },
+    ["sand"] = { AssetId = 41324966, Uuid = "{73d04068-5e46-424f-8df6-01eb744cbff6}" },
+    ["slate"] = { AssetId = 41324945, Uuid = "{974a5022-0eb8-467d-a645-f24801997ec3}" },
+    ["granite"] = { AssetId = 41324946, Uuid = "{9534d6cd-f568-4791-811a-d8aea97c844f}" },
+    ["maple"] = { AssetId = 41324957, Uuid = "{7db34fb6-7ade-49fb-a1b4-727194875eb4}" },
+    ["mahogany"] = { AssetId = 41324954, Uuid = "{6e7fbfbd-0929-49be-9f71-b43526b631f2}" },
+    ["ice - corner"] = { AssetId = 56451599, Uuid = "{b2af6b23-cb1c-40e5-9102-2d96d18f2f5b}" },
+    ["ice - long wedge"] = { AssetId = 56451638, Uuid = "{bbbc39ba-954f-4935-b1a5-c09bd7d47a08}" },
+    ["ice - wedge"] = { AssetId = 56451658, Uuid = "{1b9b1989-fe7c-4a8d-9a94-e46bf29412e6}" },
+    ["ice - block"] = { AssetId = 56451715, Uuid = "{408bd901-01c2-4ee0-a5e6-15a97de2b159}" },
+    ["mud - corner"] = { AssetId = 56451745, Uuid = "{f3ba12b1-3458-4ab5-8d8c-138dceda10b4}" },
+    ["mud - long wedge"] = { AssetId = 56451777, Uuid = "{f837bbd7-1040-47a7-873e-e01da1135b34}" },
+    ["mud - wedge"] = { AssetId = 56451808, Uuid = "{14c6080a-7d7d-4e96-ac42-c3b480d0d517}" },
+    ["mud - block"] = { AssetId = 56451835, Uuid = "{850abdd5-d786-4333-a505-6bcbf5cbb675}" },
+    ["stone - corner"] = { AssetId = 56451873, Uuid = "{c84190ef-f58a-4a0c-bd03-1f5f66b09db4}" },
+    ["stone - long wedge"] = { AssetId = 56451909, Uuid = "{a60281e1-4d6f-4c52-8d7c-cc15926e87d9}" },
+    ["stone - wedge"] = { AssetId = 56451936, Uuid = "{e891177d-8607-452c-8b74-f9332b94e10d}" },
+    ["stone - block"] = { AssetId = 56451953, Uuid = "{05d6d639-3acc-4534-86ef-668459ce136c}" },
+    ["grass - corner"] = { AssetId = 56451992, Uuid = "{8d1d6136-bf6f-496a-9629-a9f3a1dbd0ab}" },
+    ["grass - long wedge"] = { AssetId = 56452031, Uuid = "{c12d38d9-6826-4051-af79-e5cd0a0dea98}" },
+    ["grass - wedge"] = { AssetId = 56452072, Uuid = "{64653693-aa02-497d-a659-d06961811d29}" },
+    ["grass - block"] = { AssetId = 56452103, Uuid = "{76a10297-f1e1-420d-84cb-bf1799c51ed0}" },
+    ["wood - corner"] = { AssetId = 56452119, Uuid = "{0ffd6898-5fc7-4748-8377-30b5a22f72e2}" },
+    ["wood - long wedge"] = { AssetId = 56452145, Uuid = "{759ab96f-058e-4eaf-afd5-85e41a1233f8}" },
+    ["wood - wedge"] = { AssetId = 56452182, Uuid = "{9616b2f3-a304-434b-8b61-53a1fd9e4588}" },
+    ["wood - block"] = { AssetId = 56452191, Uuid = "{0f0e0122-46ed-45bf-ac29-78ac3da2fd21}" },
+    ["corner block - pink"] = { AssetId = 56452267, Uuid = "{11b3b40c-11bb-4579-9be2-73868f65b516}" },
+    ["block - pink"] = { AssetId = 56452293, Uuid = "{c1f67793-83f0-4292-a41c-93bc993c47bd}" },
+    ["corner block - magenta"] = { AssetId = 56452312, Uuid = "{ad92729a-72f7-41f2-9b52-1b266cbe51cc}" },
+    ["block - magenta"] = { AssetId = 56452342, Uuid = "{2947a6be-0838-4a9e-9748-7ddef9670efa}" },
+    ["corner block - purple"] = { AssetId = 56452381, Uuid = "{e6581701-7dbd-450b-b653-fe93ad3f5fae}" },
+    ["block - purple"] = { AssetId = 56452411, Uuid = "{7226b723-b5a0-453f-8cfd-b36b5279dd89}" },
+    ["corner block - cyan"] = { AssetId = 56452438, Uuid = "{7950cde0-13ed-4754-8936-72401b3ede7c}" },
+    ["block - cyan"] = { AssetId = 56452470, Uuid = "{73734c7e-2599-4d18-9491-7428dbe8d54a}" },
+    ["corner block - blue"] = { AssetId = 56452507, Uuid = "{0ff073ec-6dcd-454c-9867-403c7c07f5c7}" },
+    ["block - blue"] = { AssetId = 56452539, Uuid = "{5f462496-5942-42b8-af7f-8f7211333682}" },
+    ["corner block - dark green"] = { AssetId = 56452573, Uuid = "{6310e515-6b44-443a-a229-496556108391}" },
+    ["block - dark green"] = { AssetId = 56452610, Uuid = "{e938cb90-49c3-4b41-9609-d58a276af5e6}" },
+    ["corner block - green"] = { AssetId = 56452628, Uuid = "{67be9daa-9076-4195-a38e-98429994af04}" },
+    ["block - green"] = { AssetId = 56452651, Uuid = "{03183287-2d9b-4ec9-8d97-d8de4c32bacc}" },
+    ["corner block - yellow"] = { AssetId = 56452687, Uuid = "{70d3fc3b-c26b-4485-81c6-c9a14fecd58e}" },
+    ["block - yellow"] = { AssetId = 56452718, Uuid = "{6864cbe1-da9a-4c32-9b63-304ba18ee77a}" },
+    ["corner block - orange"] = { AssetId = 56452752, Uuid = "{79bd80c3-006d-436b-b5e8-59280901d2cb}" },
+    ["block - orange"] = { AssetId = 56452768, Uuid = "{b78be61a-bb44-4cc9-9113-8f266a71dd79}" },
+    ["corner block - red"] = { AssetId = 56452798, Uuid = "{21197534-f5ab-46ef-9c14-3c4a70968062}" },
+    ["block - red"] = { AssetId = 56452821, Uuid = "{dda31422-83e5-4f1d-9dd2-b3992ea030bb}" },
+    ["corner block - white"] = { AssetId = 56452849, Uuid = "{f508aec0-a2ea-47bb-b3a7-c2d0915cc5d0}" },
+    ["block - white"] = { AssetId = 56452868, Uuid = "{b69eae0e-a654-480e-ba2d-d628e8303986}" },
+    ["corner block - grey"] = { AssetId = 56452995, Uuid = "{5811edbc-562e-4b0b-953a-dd86f45fa153}" },
+    ["block - grey"] = { AssetId = 56453012, Uuid = "{68b70996-e819-4088-ba3b-1bf2713d82a3}" },
+    ["corner block - black"] = { AssetId = 56453030, Uuid = "{7107155e-7f2e-47b5-8bc7-c203770e2cff}" },
+    ["block - black"] = { AssetId = 56453053, Uuid = "{673e542a-24c6-4b26-8f2f-9dcd191bf9a6}" }
+}
+
+-- Returns the world-space Y of the plate's base surface (top face of Base part)
+local function getPlateBaseY(plate)
+    local base = plate:FindFirstChild("Base") or plate.PrimaryPart
+    if base then
+        -- Top surface Y = center Y + half height
+        return base.Position.Y + (base.Size.Y / 2)
+    end
+    return 0
+end
+
+-- Returns boundary extent for an empty plate derived from Base part size
+local function getPlateBoundsFromBase(plate)
+    local base = plate:FindFirstChild("Base") or plate.PrimaryPart
+    if base then
+        local cx = base.Position.X
+        local cz = base.Position.Z
+        local hx = base.Size.X / 2
+        local hz = base.Size.Z / 2
+        return cx - hx, cx + hx, cz - hz, cz + hz
+    end
+    -- absolute last resort fallback
+    return -48, 48, -48, 48
+end
+
+local function getMyPlate()
+    if not Workspace:FindFirstChild("Plates") then return nil end
+    for i = 1, 9 do
+        local plate = Workspace.Plates:FindFirstChild("Plate" .. i)
+        if plate and plate:FindFirstChild("Owner") then
+            if tostring(plate.Owner.Value) == LocalPlayer.Name then
+                return plate
+            end
+        end
+    end
+    return nil
+end
+
+PlotDropdown = Tab:CreateDropdown({
+    Name = "Select Target Plot to Copy",
+    Options = {"Scanning..."},
+    CurrentOption = {"Scanning..."},
+    MultipleOptions = false,
+    Flag = "PlotDropdown",
+    Callback = function(Option)
+        selectedPlotName = type(Option) == "table" and Option[1] or Option
+    end,
+})
+
+Tab:CreateButton({
+    Name = "Mirror & Build (Edge-to-Edge Bounds)",
+    Callback = function()
+        if not selectedPlotName or selectedPlotName == "Scanning..." or selectedPlotName == "No Available Plots" then
+            Rayfield:Notify({Title = "Error", Content = "Please select a valid plot first!", Duration = 3})
+            return
+        end
+
+        local plateNum = selectedPlotName:match("Plate%s*(%d)")
+        local sourcePlate = plateNum and Workspace:FindFirstChild("Plates") and Workspace.Plates:FindFirstChild("Plate" .. plateNum)
+        local myPlate = getMyPlate()
+
+        if not sourcePlate or not sourcePlate:FindFirstChild("ActiveParts") then
+            Rayfield:Notify({Title = "Error", Content = "Source ActiveParts not found!", Duration = 3})
+            return
+        end
+
+        if not myPlate then
+            Rayfield:Notify({Title = "Error", Content = "Could not find your own plate!", Duration = 4})
+            return
+        end
+
+        local StampEvent = ReplicatedStorage:FindFirstChild("Remotes") and ReplicatedStorage.Remotes:FindFirstChild("StampAsset")
+        if not StampEvent then
+            Rayfield:Notify({Title = "Error", Content = "StampAsset remote not found!", Duration = 3})
+            return
+        end
+
+        task.spawn(function()
+            -- ── Source plate: scan all valid parts ──────────────────────────────
+            local minX, maxX = math.huge, -math.huge
+            local minZ, maxZ = math.huge, -math.huge
+            local sourceBaseY = getPlateBaseY(sourcePlate)
+
+            local validPartsData = {}
+
+            for _, model in ipairs(sourcePlate.ActiveParts:GetChildren()) do
+                if model:IsA("Model") then
+                    local lookupName = string.lower(model.Name)
+                    local blockInfo = BlockDatabase[lookupName]
+                    local assetId = blockInfo and blockInfo.AssetId
+                        or (model:FindFirstChild("AssetId") and model.AssetId.Value)
+                    local uuid = blockInfo and blockInfo.Uuid
+                        or ("{" .. string.lower(string.format(
+                            "%08x-%04x-%04x-%04x-%012x",
+                            math.random(0, 0xFFFFFFFF),
+                            math.random(0, 0xFFFF),
+                            math.random(0, 0xFFFF),
+                            math.random(0, 0xFFFF),
+                            math.random(0, 0xFFFFFFFFFFFF)
+                        )) .. "}")
+                    local placementCFrameVal = model:FindFirstChild("PlacementCFrame")
+
+                    if assetId and placementCFrameVal then
+                        local cf = placementCFrameVal.Value
+                        table.insert(validPartsData, {AssetId = assetId, Uuid = uuid, CFrame = cf})
+
+                        if cf.X < minX then minX = cf.X end
+                        if cf.X > maxX then maxX = cf.X end
+                        if cf.Z < minZ then minZ = cf.Z end
+                        if cf.Z > maxZ then maxZ = cf.Z end
+                    end
+                end
+            end
+
+            if #validPartsData == 0 then
+                Rayfield:Notify({Title = "Error", Content = "No valid parts found to copy!", Duration = 3})
+                return
+            end
+
+            -- ── Target plate: determine bounds ──────────────────────────────────
+            local myMinX, myMaxX = math.huge, -math.huge
+            local myMinZ, myMaxZ = math.huge, -math.huge
+            local myBaseY = getPlateBaseY(myPlate)
+            local hasMyParts = false
+
+            if myPlate:FindFirstChild("ActiveParts") then
+                for _, model in ipairs(myPlate.ActiveParts:GetChildren()) do
+                    if model:IsA("Model") and model:FindFirstChild("PlacementCFrame") then
+                        local cf = model.PlacementCFrame.Value
+                        hasMyParts = true
+                        if cf.X < myMinX then myMinX = cf.X end
+                        if cf.X > myMaxX then myMaxX = cf.X end
+                        if cf.Z < myMinZ then myMinZ = cf.Z end
+                        if cf.Z > myMaxZ then myMaxZ = cf.Z end
+                    end
+                end
+            end
+
+            -- Empty plate: read actual Base part geometry instead of assuming 96 studs
+            if not hasMyParts or myMinX == math.huge then
+                myMinX, myMaxX, myMinZ, myMaxZ = getPlateBoundsFromBase(myPlate)
+            end
+
+            local count = 0
+            print("--- Starting Edge-Matched Build Process ---")
+            print(string.format("Source base Y: %.2f | Target base Y: %.2f", sourceBaseY, myBaseY))
+            print(string.format("Source bounds X[%.1f, %.1f] Z[%.1f, %.1f]", minX, maxX, minZ, maxZ))
+            print(string.format("Target bounds X[%.1f, %.1f] Z[%.1f, %.1f]", myMinX, myMaxX, myMinZ, myMaxZ))
+
+            -- ── Project each block onto the target plate ─────────────────────────
+            for _, data in ipairs(validPartsData) do
+                local cf = data.CFrame
+
+                -- Normalize against source plate edges
+                local xRatio = (maxX ~= minX) and (cf.X - minX) / (maxX - minX) or 0.5
+                local zRatio = (maxZ ~= minZ) and (cf.Z - minZ) / (maxZ - minZ) or 0.5
+
+                -- Project onto target plate edges
+                local targetX = myMinX + (xRatio * (myMaxX - myMinX))
+                local targetZ = myMinZ + (zRatio * (myMaxZ - myMinZ))
+
+                -- FIX: Y is relative to source base, re-anchored to target base.
+                -- This preserves stacking height regardless of where each plate
+                -- sits in world space.
+                local relativeY = cf.Y - sourceBaseY
+                local targetY = myBaseY + relativeY
+
+                -- Decompose rotation, inject corrected world position
+                local local_xx, local_yx, local_zx,
+                      local_xy, local_yy, local_zy,
+                      local_xz, local_yz, local_zz
+
+                _, _, _,
+                local_xx, local_yx, local_zx,
+                local_xy, local_yy, local_zy,
+                local_xz, local_yz, local_zz = cf:GetComponents()
+
+                local translatedCF = CFrame.new(
+                    targetX, targetY, targetZ,
+                    local_xx, local_yx, local_zx,
+                    local_xy, local_yy, local_zy,
+                    local_xz, local_yz, local_zz
+                )
+
+                pcall(function()
+                    StampEvent:InvokeServer(
+                        data.AssetId,
+                        translatedCF,
+                        data.Uuid,
+                        {},
+                        0
+                    )
+                end)
+
+                count = count + 1
+                task.wait(0.08)
+            end
+
+            print("--- Build Process Completed. Total Built:", count, "---")
+            Rayfield:Notify({
+                Title = "Success",
+                Content = "Edge-matched build complete! Built " .. count .. " blocks.",
+                Duration = 4
+            })
+        end)
+    end,
+})
+
+-- Background loop: refresh dropdown every 3 seconds
+task.spawn(function()
+    while true do
+        local newPlotOptions = {}
+        if Workspace:FindFirstChild("Plates") then
+            for i = 1, 9 do
+                local plate = Workspace.Plates:FindFirstChild("Plate" .. i)
+                if plate then
+                    local ownerVal = plate:FindFirstChild("Owner") and plate.Owner.Value
+                    local ownerString = (ownerVal and ownerVal ~= "") and tostring(ownerVal) or "Nobody"
+                    if ownerString ~= LocalPlayer.Name then
+                        table.insert(newPlotOptions, "Plate " .. i .. " - " .. ownerString)
+                    end
+                end
+            end
+        end
+
+        if #newPlotOptions == 0 then
+            newPlotOptions = {"No Available Plots"}
+        end
+
+        PlotDropdown:Refresh(newPlotOptions)
+        task.wait(3)
+    end
+end)
