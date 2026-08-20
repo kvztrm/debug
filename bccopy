@@ -279,6 +279,21 @@ Tab:CreateButton({
             -- ── Scan source blocks ───────────────────────────────────────────────
             local validPartsData = {}
 
+            -- DEBUG: Dump children of first source model to identify rotation property
+            for _, model in ipairs(sourcePlate.ActiveParts:GetChildren()) do
+                if model:IsA("Model") then
+                    print("=== MODEL: " .. model.Name .. " ===")
+                    for _, child in ipairs(model:GetChildren()) do
+                        print(string.format("  [%s] %s = %s",
+                            child.ClassName,
+                            child.Name,
+                            tostring(child.Value ~= nil and child.Value or "n/a")
+                        ))
+                    end
+                    break -- only need the first model to see the structure
+                end
+            end
+
             for _, model in ipairs(sourcePlate.ActiveParts:GetChildren()) do
                 if model:IsA("Model") then
                     local lookupName = string.lower(model.Name)
