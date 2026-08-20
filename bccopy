@@ -5,13 +5,14 @@
     Game: NUKE! Build and Battle (Roblox)
     Framework: Rayfield UI Library
 
-    Fix iteration 10 — rotation index derived from PlacementCFrame matrix:
-    - No rotation value child exists on the model. Confirmed via debug dump.
-    - Rotation is encoded in the PlacementCFrame rotation matrix.
-    - Server uses BOTH the CFrame position AND the rotation index.
-    - Index derived by reading the X-axis and Z-axis components of the matrix
-      and mapping to the four 90° increments the game supports.
-    - Debug print fixed: pcall wraps child.Value access to avoid crashing on Parts.
+    Fix iteration 11 — pivot-space transform for both position AND rotation index:
+    - Position: srcPivot:Inverse() * srcCF → myPivot * localCF gives correct
+      world position accounting for any plate orientation difference.
+    - Rotation: index derived from the TRANSFORMED world CFrame, not the source.
+      Previously derived from source CFrame then applied to mirrored-plate position
+      — gave wrong orientation because plate X axes point opposite directions.
+    - CFrame sent to server is position-only (no rotation matrix) since server
+      applies rotation from the integer index.
     ================================================================================
 ]]
 
@@ -187,25 +188,16 @@ local function getMyPlate()
     return nil
 end
 
--- Derive rotation index from the CFrame's Y-axis rotation.
--- The game supports 4 states in 90° increments around the Y axis.
--- Confirmed from Cobalt dumps:
---   index 0: X-axis = ( 1, 0,  0), Z-axis = ( 0, 0,  1)  →  0°
---   index 1: X-axis = ( 0, 0,  1), Z-axis = (-1, 0,  0)  → 90° CCW
---   index 2: X-axis = (-1, 0,  0), Z-axis = ( 0, 0, -1)  → 180°
---   index 3: X-axis = ( 0, 0, -1), Z-axis = ( 1, 0,  0)  → 270° CCW
+-- Derive rotation index from a CFrame's Y-axis rotation.
+-- Reads the transformed world CFrame so plate orientation is accounted for.
 local function getRotationIndex(cf)
     local xx = math.round(cf.XVector.X)
     local xz = math.round(cf.XVector.Z)
-    -- xx=1  xz=0  → index 0
-    -- xx=0  xz=1  → index 1
-    -- xx=-1 xz=0  → index 2
-    -- xx=0  xz=-1 → index 3
     if xx == 1  and xz == 0  then return 0 end
     if xx == 0  and xz == 1  then return 1 end
     if xx == -1 and xz == 0  then return 2 end
     if xx == 0  and xz == -1 then return 3 end
-    return 0  -- fallback
+    return 0
 end
 
 PlotDropdown = Tab:CreateDropdown({
@@ -220,7 +212,7 @@ PlotDropdown = Tab:CreateDropdown({
 })
 
 Tab:CreateButton({
-    Name = "Mirror & Build (Matrix Rotation + Footprint BFS)",
+    Name = "Mirror & Build (Pivot Space + Matrix Rotation)",
     Callback = function()
         if not selectedPlotName
             or selectedPlotName == "Scanning..."
@@ -253,16 +245,16 @@ Tab:CreateButton({
 
         task.spawn(function()
 
-            local srcPivot = sourcePlate:GetPivot()
-            local myPivot  = myPlate:GetPivot()
-            local deltaX   = myPivot.X - srcPivot.X
-            local deltaY   = myPivot.Y - srcPivot.Y
-            local deltaZ   = myPivot.Z - srcPivot.Z
-            print(string.format("Pivot delta: (%.3f, %.3f, %.3f)", deltaX, deltaY, deltaZ))
+            local srcPivot    = sourcePlate:GetPivot()
+            local myPivot     = myPlate:GetPivot()
+            local srcPivotInv = srcPivot:Inverse()
+
+            print(string.format("Source pivot: (%.3f, %.3f, %.3f)", srcPivot.X, srcPivot.Y, srcPivot.Z))
+            print(string.format("Target pivot: (%.3f, %.3f, %.3f)", myPivot.X,  myPivot.Y,  myPivot.Z))
 
             -- ── Scan source blocks ───────────────────────────────────────────────
             local validPartsData = {}
-            local rotationsSeen  = {}  -- log unique rotation indices for verification
+            local rotationsSeen  = {}
 
             for _, model in ipairs(sourcePlate.ActiveParts:GetChildren()) do
                 if model:IsA("Model") then
@@ -282,16 +274,22 @@ Tab:CreateButton({
                     local placementCFrameVal = model:FindFirstChild("PlacementCFrame")
 
                     if assetId and placementCFrameVal then
-                        local srcCF        = placementCFrameVal.Value
-                        local rotIndex     = getRotationIndex(srcCF)
-                        local sx, sy, sz   = getModelSize(model)
+                        local srcCF      = placementCFrameVal.Value
+                        local sx, sy, sz = getModelSize(model)
 
-                        -- Position only — server applies rotation from index
-                        local targetCF = CFrame.new(
-                            srcCF.X + deltaX,
-                            srcCF.Y + deltaY,
-                            srcCF.Z + deltaZ
-                        )
+                        -- Step 1: source world → source plate local
+                        local localCF = srcPivotInv * srcCF
+
+                        -- Step 2: source plate local → target plate world
+                        -- Position AND rotation are now correct for target plate
+                        local worldCF = myPivot * localCF
+
+                        -- Step 3: derive rotation index from target-space CFrame
+                        local rotIndex = getRotationIndex(worldCF)
+
+                        -- Step 4: position-only CFrame for server
+                        -- Server ignores matrix rotation, uses index instead
+                        local targetCF = CFrame.new(worldCF.X, worldCF.Y, worldCF.Z)
 
                         rotationsSeen[rotIndex] = (rotationsSeen[rotIndex] or 0) + 1
 
@@ -313,13 +311,12 @@ Tab:CreateButton({
                 return
             end
 
-            -- Log rotation distribution so we can verify indices are being read
             print(string.format("Total blocks: %d", #validPartsData))
             for idx, cnt in pairs(rotationsSeen) do
                 print(string.format("  rotIndex %d: %d blocks", idx, cnt))
             end
 
-            -- ── Seed floor occupancy ─────────────────────────────────────────────
+            -- ── Seed floor ───────────────────────────────────────────────────────
             local occupied = {}
             local myBase   = getLargestBase(myPlate)
             local floorY   = myPivot.Y
@@ -327,11 +324,9 @@ Tab:CreateButton({
             if myBase then
                 local topY = myBase.Position.Y + myBase.Size.Y / 2
                 if topY > floorY then floorY = topY end
-                markFootprint(
-                    myBase.Position.X, floorY, myBase.Position.Z,
+                markFootprint(myBase.Position.X, floorY, myBase.Position.Z,
                     myBase.Size.X, GRID, myBase.Size.Z, occupied)
-                markFootprint(
-                    myBase.Position.X, floorY - GRID, myBase.Position.Z,
+                markFootprint(myBase.Position.X, floorY - GRID, myBase.Position.Z,
                     myBase.Size.X, GRID, myBase.Size.Z, occupied)
                 print(string.format("Floor seeded Y=%.2f | base %.0fx%.0f",
                     floorY, myBase.Size.X, myBase.Size.Z))
@@ -345,7 +340,7 @@ Tab:CreateButton({
                 print("Floor seed fallback: pivot band")
             end
 
-            -- ── Connectivity-first BFS ───────────────────────────────────────────
+            -- ── BFS stamp ────────────────────────────────────────────────────────
             local STAMP_DELAY = 0.08
             local PASS_PAUSE  = 0.5
 
@@ -377,7 +372,6 @@ Tab:CreateButton({
                     stuckCount = stuckCount + 1
                     print(string.format("Pass %d: stuck %d/%d | deferred %d",
                         passNum, stuckCount, MAX_STUCK, #deferred))
-
                     if stuckCount >= MAX_STUCK then
                         print(string.format("Force-stamping %d disconnected blocks", #deferred))
                         for _, data in ipairs(deferred) do
@@ -393,7 +387,6 @@ Tab:CreateButton({
                         deferred   = {}
                         stuckCount = 0
                     end
-
                     remaining = deferred
                     task.wait(PASS_PAUSE)
                     continue
@@ -403,9 +396,9 @@ Tab:CreateButton({
 
                 table.sort(ready, function(a, b)
                     local na = neighborCount(a.TargetCF.X, a.TargetCF.Y, a.TargetCF.Z,
-                                            a.SizeX, a.SizeY, a.SizeZ, occupied)
+                        a.SizeX, a.SizeY, a.SizeZ, occupied)
                     local nb = neighborCount(b.TargetCF.X, b.TargetCF.Y, b.TargetCF.Z,
-                                            b.SizeX, b.SizeY, b.SizeZ, occupied)
+                        b.SizeX, b.SizeY, b.SizeZ, occupied)
                     if na ~= nb then return na > nb end
                     return a.TargetCF.Y < b.TargetCF.Y
                 end)
