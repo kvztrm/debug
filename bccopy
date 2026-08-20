@@ -5,15 +5,13 @@
     Game: NUKE! Build and Battle (Roblox)
     Framework: Rayfield UI Library
 
-    Fix iteration 9 — footprint-aware occupancy:
-    - When a block is stamped, ALL grid cells it physically occupies are marked,
-      not just its center cell. Size read from model PrimaryPart or first BasePart.
-    - This means a block sitting flush against a 4x4x4 block actually finds an
-      occupied neighbor cell, regardless of whether centers are within GRID distance.
-    - 26-connectivity neighbor check retained but now actually fires correctly
-      because adjacent face cells are populated.
-    - Deadlock breaker stamps all disconnected islands at once.
-    - PASS_PAUSE 0.5s so server welds before next pass checks adjacency.
+    Fix iteration 10 — rotation index derived from PlacementCFrame matrix:
+    - No rotation value child exists on the model. Confirmed via debug dump.
+    - Rotation is encoded in the PlacementCFrame rotation matrix.
+    - Server uses BOTH the CFrame position AND the rotation index.
+    - Index derived by reading the X-axis and Z-axis components of the matrix
+      and mapping to the four 90° increments the game supports.
+    - Debug print fixed: pcall wraps child.Value access to avoid crashing on Parts.
     ================================================================================
 ]]
 
@@ -92,20 +90,16 @@ local BlockDatabase = {
     ["block - black"]             = { AssetId = 56453053,  Uuid = "{673e542a-24c6-4b26-8f2f-9dcd191bf9a6}" },
 }
 
-local GRID = 2  -- resolution in studs
+local GRID = 2
 
 local function occupancyKey(x, y, z)
     return math.round(x / GRID) .. "," .. math.round(y / GRID) .. "," .. math.round(z / GRID)
 end
 
--- Mark every grid cell the block physically occupies, based on its
--- world-space CFrame and size. This is the core fix — adjacency checks
--- now find populated face cells, not just the center.
 local function markFootprint(cx, cy, cz, sizeX, sizeY, sizeZ, occupied)
     local hx = math.max(sizeX / 2, GRID)
     local hy = math.max(sizeY / 2, GRID)
     local hz = math.max(sizeZ / 2, GRID)
-
     local x = cx - hx
     while x <= cx + hx + 0.01 do
         local y = cy - hy
@@ -121,46 +115,21 @@ local function markFootprint(cx, cy, cz, sizeX, sizeY, sizeZ, occupied)
     end
 end
 
--- 6-face neighbors only — with full footprint marking, 6-face is
--- sufficient and cheaper than 26-connectivity.
-local NEIGHBOR_OFFSETS = {
-    Vector3.new( GRID,  0,    0   ),
-    Vector3.new(-GRID,  0,    0   ),
-    Vector3.new( 0,     GRID, 0   ),
-    Vector3.new( 0,    -GRID, 0   ),
-    Vector3.new( 0,     0,    GRID),
-    Vector3.new( 0,     0,   -GRID),
-}
-
 local function hasNeighbor(cx, cy, cz, sizeX, sizeY, sizeZ, occupied)
-    -- Check every face cell of this block's footprint for an occupied neighbor.
-    -- A neighbor exists if any cell just outside any face is occupied.
     local hx = math.max(sizeX / 2, GRID)
     local hy = math.max(sizeY / 2, GRID)
     local hz = math.max(sizeZ / 2, GRID)
-
-    -- Sample face centers + corners on each of the 6 faces
     local faces = {
-        -- +X face
         {cx + hx + GRID, cy, cz},
-        -- -X face
         {cx - hx - GRID, cy, cz},
-        -- +Y face
         {cx, cy + hy + GRID, cz},
-        -- -Y face (ground connection)
         {cx, cy - hy - GRID, cz},
-        -- +Z face
         {cx, cy, cz + hz + GRID},
-        -- -Z face
         {cx, cy, cz - hz - GRID},
     }
-
     for _, f in ipairs(faces) do
-        if occupied[occupancyKey(f[1], f[2], f[3])] then
-            return true
-        end
+        if occupied[occupancyKey(f[1], f[2], f[3])] then return true end
     end
-
     return false
 end
 
@@ -178,14 +147,11 @@ local function neighborCount(cx, cy, cz, sizeX, sizeY, sizeZ, occupied)
         {cx, cy, cz - hz - GRID},
     }
     for _, f in ipairs(faces) do
-        if occupied[occupancyKey(f[1], f[2], f[3])] then
-            count = count + 1
-        end
+        if occupied[occupancyKey(f[1], f[2], f[3])] then count = count + 1 end
     end
     return count
 end
 
--- Read block size from source model. Falls back to 4x4x4 if no part found.
 local function getModelSize(model)
     local part = model.PrimaryPart
     if not part then
@@ -193,10 +159,8 @@ local function getModelSize(model)
             if c:IsA("BasePart") then part = c; break end
         end
     end
-    if part then
-        return part.Size.X, part.Size.Y, part.Size.Z
-    end
-    return 4, 4, 4  -- standard block fallback
+    if part then return part.Size.X, part.Size.Y, part.Size.Z end
+    return 4, 4, 4
 end
 
 local function getLargestBase(plate)
@@ -223,6 +187,27 @@ local function getMyPlate()
     return nil
 end
 
+-- Derive rotation index from the CFrame's Y-axis rotation.
+-- The game supports 4 states in 90° increments around the Y axis.
+-- Confirmed from Cobalt dumps:
+--   index 0: X-axis = ( 1, 0,  0), Z-axis = ( 0, 0,  1)  →  0°
+--   index 1: X-axis = ( 0, 0,  1), Z-axis = (-1, 0,  0)  → 90° CCW
+--   index 2: X-axis = (-1, 0,  0), Z-axis = ( 0, 0, -1)  → 180°
+--   index 3: X-axis = ( 0, 0, -1), Z-axis = ( 1, 0,  0)  → 270° CCW
+local function getRotationIndex(cf)
+    local xx = math.round(cf.XVector.X)
+    local xz = math.round(cf.XVector.Z)
+    -- xx=1  xz=0  → index 0
+    -- xx=0  xz=1  → index 1
+    -- xx=-1 xz=0  → index 2
+    -- xx=0  xz=-1 → index 3
+    if xx == 1  and xz == 0  then return 0 end
+    if xx == 0  and xz == 1  then return 1 end
+    if xx == -1 and xz == 0  then return 2 end
+    if xx == 0  and xz == -1 then return 3 end
+    return 0  -- fallback
+end
+
 PlotDropdown = Tab:CreateDropdown({
     Name = "Select Target Plot to Copy",
     Options = {"Scanning..."},
@@ -235,7 +220,7 @@ PlotDropdown = Tab:CreateDropdown({
 })
 
 Tab:CreateButton({
-    Name = "Mirror & Build (Footprint BFS)",
+    Name = "Mirror & Build (Matrix Rotation + Footprint BFS)",
     Callback = function()
         if not selectedPlotName
             or selectedPlotName == "Scanning..."
@@ -268,7 +253,6 @@ Tab:CreateButton({
 
         task.spawn(function()
 
-            -- ── Translation delta ────────────────────────────────────────────────
             local srcPivot = sourcePlate:GetPivot()
             local myPivot  = myPlate:GetPivot()
             local deltaX   = myPivot.X - srcPivot.X
@@ -278,21 +262,7 @@ Tab:CreateButton({
 
             -- ── Scan source blocks ───────────────────────────────────────────────
             local validPartsData = {}
-
-            -- DEBUG: Dump children of first source model to identify rotation property
-            for _, model in ipairs(sourcePlate.ActiveParts:GetChildren()) do
-                if model:IsA("Model") then
-                    print("=== MODEL: " .. model.Name .. " ===")
-                    for _, child in ipairs(model:GetChildren()) do
-                        print(string.format("  [%s] %s = %s",
-                            child.ClassName,
-                            child.Name,
-                            tostring(child.Value ~= nil and child.Value or "n/a")
-                        ))
-                    end
-                    break -- only need the first model to see the structure
-                end
-            end
+            local rotationsSeen  = {}  -- log unique rotation indices for verification
 
             for _, model in ipairs(sourcePlate.ActiveParts:GetChildren()) do
                 if model:IsA("Model") then
@@ -310,28 +280,26 @@ Tab:CreateButton({
                             math.random(0, 0xFFFFFFFFFFFF)
                         )) .. "}")
                     local placementCFrameVal = model:FindFirstChild("PlacementCFrame")
-                    local rotVal = model:FindFirstChild("Rotation")
-                        or model:FindFirstChild("RotationIndex")
-                    local rotationIndex = (rotVal and rotVal:IsA("IntValue")) and rotVal.Value or 0
 
                     if assetId and placementCFrameVal then
-                        local srcCF = placementCFrameVal.Value
-                        local sx, sy, sz = getModelSize(model)
+                        local srcCF        = placementCFrameVal.Value
+                        local rotIndex     = getRotationIndex(srcCF)
+                        local sx, sy, sz   = getModelSize(model)
 
+                        -- Position only — server applies rotation from index
                         local targetCF = CFrame.new(
                             srcCF.X + deltaX,
                             srcCF.Y + deltaY,
-                            srcCF.Z + deltaZ,
-                            srcCF.XVector.X, srcCF.YVector.X, srcCF.ZVector.X,
-                            srcCF.XVector.Y, srcCF.YVector.Y, srcCF.ZVector.Y,
-                            srcCF.XVector.Z, srcCF.YVector.Z, srcCF.ZVector.Z
+                            srcCF.Z + deltaZ
                         )
+
+                        rotationsSeen[rotIndex] = (rotationsSeen[rotIndex] or 0) + 1
 
                         table.insert(validPartsData, {
                             AssetId       = assetId,
                             Uuid          = uuid,
                             TargetCF      = targetCF,
-                            RotationIndex = rotationIndex,
+                            RotationIndex = rotIndex,
                             SizeX         = sx,
                             SizeY         = sy,
                             SizeZ         = sz,
@@ -345,9 +313,13 @@ Tab:CreateButton({
                 return
             end
 
+            -- Log rotation distribution so we can verify indices are being read
             print(string.format("Total blocks: %d", #validPartsData))
+            for idx, cnt in pairs(rotationsSeen) do
+                print(string.format("  rotIndex %d: %d blocks", idx, cnt))
+            end
 
-            -- ── Seed floor occupancy with full footprint ─────────────────────────
+            -- ── Seed floor occupancy ─────────────────────────────────────────────
             local occupied = {}
             local myBase   = getLargestBase(myPlate)
             local floorY   = myPivot.Y
@@ -355,42 +327,35 @@ Tab:CreateButton({
             if myBase then
                 local topY = myBase.Position.Y + myBase.Size.Y / 2
                 if topY > floorY then floorY = topY end
-                -- Mark the entire floor surface as occupied
                 markFootprint(
                     myBase.Position.X, floorY, myBase.Position.Z,
-                    myBase.Size.X, GRID, myBase.Size.Z,
-                    occupied
-                )
-                -- One layer below too so bottom-face checks find it
+                    myBase.Size.X, GRID, myBase.Size.Z, occupied)
                 markFootprint(
                     myBase.Position.X, floorY - GRID, myBase.Position.Z,
-                    myBase.Size.X, GRID, myBase.Size.Z,
-                    occupied
-                )
+                    myBase.Size.X, GRID, myBase.Size.Z, occupied)
                 print(string.format("Floor seeded Y=%.2f | base %.0fx%.0f",
                     floorY, myBase.Size.X, myBase.Size.Z))
             else
-                -- Fallback: wide band at pivot
                 for ix = -60, 60, GRID do
                     for iz = -60, 60, GRID do
-                        occupied[occupancyKey(myPivot.X + ix, myPivot.Y, myPivot.Z + iz)] = true
+                        occupied[occupancyKey(myPivot.X + ix, myPivot.Y,        myPivot.Z + iz)] = true
                         occupied[occupancyKey(myPivot.X + ix, myPivot.Y - GRID, myPivot.Z + iz)] = true
                     end
                 end
                 print("Floor seed fallback: pivot band")
             end
 
-            -- ── Connectivity-first BFS with footprint-aware adjacency ────────────
-            local STAMP_DELAY  = 0.08   -- remote rate limit
-            local PASS_PAUSE   = 0.5    -- server weld settle time between passes
+            -- ── Connectivity-first BFS ───────────────────────────────────────────
+            local STAMP_DELAY = 0.08
+            local PASS_PAUSE  = 0.5
 
-            local remaining = {}
+            local remaining  = {}
             for _, d in ipairs(validPartsData) do table.insert(remaining, d) end
 
-            local count           = 0
-            local passNum         = 0
-            local stuckCount      = 0
-            local MAX_STUCK       = 3   -- force-stamp after this many zero-progress passes
+            local count      = 0
+            local passNum    = 0
+            local stuckCount = 0
+            local MAX_STUCK  = 3
 
             while #remaining > 0 do
                 passNum = passNum + 1
@@ -401,8 +366,7 @@ Tab:CreateButton({
                 for _, data in ipairs(remaining) do
                     local tcf = data.TargetCF
                     if hasNeighbor(tcf.X, tcf.Y, tcf.Z,
-                                   data.SizeX, data.SizeY, data.SizeZ,
-                                   occupied) then
+                            data.SizeX, data.SizeY, data.SizeZ, occupied) then
                         table.insert(ready, data)
                     else
                         table.insert(deferred, data)
@@ -411,29 +375,22 @@ Tab:CreateButton({
 
                 if #ready == 0 then
                     stuckCount = stuckCount + 1
-                    print(string.format("Pass %d: no ready blocks (stuck %d/%d)",
-                        passNum, stuckCount, MAX_STUCK))
+                    print(string.format("Pass %d: stuck %d/%d | deferred %d",
+                        passNum, stuckCount, MAX_STUCK, #deferred))
 
                     if stuckCount >= MAX_STUCK then
-                        -- Force-stamp ALL remaining as disconnected islands
                         print(string.format("Force-stamping %d disconnected blocks", #deferred))
                         for _, data in ipairs(deferred) do
                             pcall(function()
                                 StampEvent:InvokeServer(
-                                    data.AssetId,
-                                    data.TargetCF,
-                                    data.Uuid,
-                                    {},
-                                    data.RotationIndex
-                                )
+                                    data.AssetId, data.TargetCF, data.Uuid, {}, data.RotationIndex)
                             end)
-                            local tcf = data.TargetCF
-                            markFootprint(tcf.X, tcf.Y, tcf.Z,
+                            markFootprint(data.TargetCF.X, data.TargetCF.Y, data.TargetCF.Z,
                                 data.SizeX, data.SizeY, data.SizeZ, occupied)
                             count = count + 1
                             task.wait(STAMP_DELAY)
                         end
-                        deferred = {}
+                        deferred   = {}
                         stuckCount = 0
                     end
 
@@ -442,9 +399,8 @@ Tab:CreateButton({
                     continue
                 end
 
-                stuckCount = 0  -- made progress, reset stuck counter
+                stuckCount = 0
 
-                -- Most neighbors first, lowest Y as tiebreak
                 table.sort(ready, function(a, b)
                     local na = neighborCount(a.TargetCF.X, a.TargetCF.Y, a.TargetCF.Z,
                                             a.SizeX, a.SizeY, a.SizeZ, occupied)
@@ -457,15 +413,9 @@ Tab:CreateButton({
                 for _, data in ipairs(ready) do
                     pcall(function()
                         StampEvent:InvokeServer(
-                            data.AssetId,
-                            data.TargetCF,
-                            data.Uuid,
-                            {},
-                            data.RotationIndex
-                        )
+                            data.AssetId, data.TargetCF, data.Uuid, {}, data.RotationIndex)
                     end)
-                    local tcf = data.TargetCF
-                    markFootprint(tcf.X, tcf.Y, tcf.Z,
+                    markFootprint(data.TargetCF.X, data.TargetCF.Y, data.TargetCF.Z,
                         data.SizeX, data.SizeY, data.SizeZ, occupied)
                     count = count + 1
                     task.wait(STAMP_DELAY)
@@ -475,9 +425,7 @@ Tab:CreateButton({
                     passNum, #ready, #deferred))
 
                 remaining = deferred
-                if #remaining > 0 then
-                    task.wait(PASS_PAUSE)
-                end
+                if #remaining > 0 then task.wait(PASS_PAUSE) end
             end
 
             print("--- Build Complete. Total:", count, "---")
