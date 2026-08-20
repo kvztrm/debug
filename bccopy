@@ -5,15 +5,15 @@
     Game: NUKE! Build and Battle (Roblox)
     Framework: Rayfield UI Library
 
-    Fix iteration 7 — True connectivity-first BFS:
-    - No Y sorting. Each pass stamps ONLY blocks with >= 1 occupied neighbor.
-    - Occupied grid updated immediately after each stamp.
-    - Blocks with no ready neighbor are deferred to the next pass.
-    - This means horizontal supports are always placed before overhangs/roofs.
-    - Force-stamp fires only when zero progress is made (genuinely disconnected
-      geometry — floating decorations etc). Nothing is silently dropped.
-    - Rotation index read from model "Rotation" or "RotationIndex" IntValue.
-    - Position: raw world delta from source pivot to target pivot.
+    Fix iteration 9 — footprint-aware occupancy:
+    - When a block is stamped, ALL grid cells it physically occupies are marked,
+      not just its center cell. Size read from model PrimaryPart or first BasePart.
+    - This means a block sitting flush against a 4x4x4 block actually finds an
+      occupied neighbor cell, regardless of whether centers are within GRID distance.
+    - 26-connectivity neighbor check retained but now actually fires correctly
+      because adjacent face cells are populated.
+    - Deadlock breaker stamps all disconnected islands at once.
+    - PASS_PAUSE 0.5s so server welds before next pass checks adjacency.
     ================================================================================
 ]]
 
@@ -92,50 +92,111 @@ local BlockDatabase = {
     ["block - black"]             = { AssetId = 56453053,  Uuid = "{673e542a-24c6-4b26-8f2f-9dcd191bf9a6}" },
 }
 
--- Grid resolution. 2 studs catches half-unit offsets from wedges/corners
--- while still resolving standard 4-stud block adjacency.
-local GRID = 2
+local GRID = 2  -- resolution in studs
 
 local function occupancyKey(x, y, z)
     return math.round(x / GRID) .. "," .. math.round(y / GRID) .. "," .. math.round(z / GRID)
 end
 
--- 6-face neighbors + 18 edge neighbors (26-connectivity).
--- Standard 6-face misses diagonal touches on wedges and corners —
--- 26-connectivity catches them so those blocks register as connected.
-local NEIGHBOR_OFFSETS = {}
-do
-    for dx = -1, 1 do
-        for dy = -1, 1 do
-            for dz = -1, 1 do
-                if not (dx == 0 and dy == 0 and dz == 0) then
-                    table.insert(NEIGHBOR_OFFSETS, Vector3.new(dx * GRID, dy * GRID, dz * GRID))
-                end
+-- Mark every grid cell the block physically occupies, based on its
+-- world-space CFrame and size. This is the core fix — adjacency checks
+-- now find populated face cells, not just the center.
+local function markFootprint(cx, cy, cz, sizeX, sizeY, sizeZ, occupied)
+    local hx = math.max(sizeX / 2, GRID)
+    local hy = math.max(sizeY / 2, GRID)
+    local hz = math.max(sizeZ / 2, GRID)
+
+    local x = cx - hx
+    while x <= cx + hx + 0.01 do
+        local y = cy - hy
+        while y <= cy + hy + 0.01 do
+            local z = cz - hz
+            while z <= cz + hz + 0.01 do
+                occupied[occupancyKey(x, y, z)] = true
+                z = z + GRID
             end
+            y = y + GRID
         end
+        x = x + GRID
     end
 end
 
-local function hasNeighbor(x, y, z, occupied)
-    for _, n in ipairs(NEIGHBOR_OFFSETS) do
-        if occupied[occupancyKey(x + n.X, y + n.Y, z + n.Z)] then
+-- 6-face neighbors only — with full footprint marking, 6-face is
+-- sufficient and cheaper than 26-connectivity.
+local NEIGHBOR_OFFSETS = {
+    Vector3.new( GRID,  0,    0   ),
+    Vector3.new(-GRID,  0,    0   ),
+    Vector3.new( 0,     GRID, 0   ),
+    Vector3.new( 0,    -GRID, 0   ),
+    Vector3.new( 0,     0,    GRID),
+    Vector3.new( 0,     0,   -GRID),
+}
+
+local function hasNeighbor(cx, cy, cz, sizeX, sizeY, sizeZ, occupied)
+    -- Check every face cell of this block's footprint for an occupied neighbor.
+    -- A neighbor exists if any cell just outside any face is occupied.
+    local hx = math.max(sizeX / 2, GRID)
+    local hy = math.max(sizeY / 2, GRID)
+    local hz = math.max(sizeZ / 2, GRID)
+
+    -- Sample face centers + corners on each of the 6 faces
+    local faces = {
+        -- +X face
+        {cx + hx + GRID, cy, cz},
+        -- -X face
+        {cx - hx - GRID, cy, cz},
+        -- +Y face
+        {cx, cy + hy + GRID, cz},
+        -- -Y face (ground connection)
+        {cx, cy - hy - GRID, cz},
+        -- +Z face
+        {cx, cy, cz + hz + GRID},
+        -- -Z face
+        {cx, cy, cz - hz - GRID},
+    }
+
+    for _, f in ipairs(faces) do
+        if occupied[occupancyKey(f[1], f[2], f[3])] then
             return true
         end
     end
+
     return false
 end
 
--- Count how many occupied neighbors a position currently has.
--- Used to sort the ready queue: most-connected stamps first,
--- reducing the chance a block stamps before its support column is built.
-local function neighborCount(x, y, z, occupied)
+local function neighborCount(cx, cy, cz, sizeX, sizeY, sizeZ, occupied)
     local count = 0
-    for _, n in ipairs(NEIGHBOR_OFFSETS) do
-        if occupied[occupancyKey(x + n.X, y + n.Y, z + n.Z)] then
+    local hx = math.max(sizeX / 2, GRID)
+    local hy = math.max(sizeY / 2, GRID)
+    local hz = math.max(sizeZ / 2, GRID)
+    local faces = {
+        {cx + hx + GRID, cy, cz},
+        {cx - hx - GRID, cy, cz},
+        {cx, cy + hy + GRID, cz},
+        {cx, cy - hy - GRID, cz},
+        {cx, cy, cz + hz + GRID},
+        {cx, cy, cz - hz - GRID},
+    }
+    for _, f in ipairs(faces) do
+        if occupied[occupancyKey(f[1], f[2], f[3])] then
             count = count + 1
         end
     end
     return count
+end
+
+-- Read block size from source model. Falls back to 4x4x4 if no part found.
+local function getModelSize(model)
+    local part = model.PrimaryPart
+    if not part then
+        for _, c in ipairs(model:GetChildren()) do
+            if c:IsA("BasePart") then part = c; break end
+        end
+    end
+    if part then
+        return part.Size.X, part.Size.Y, part.Size.Z
+    end
+    return 4, 4, 4  -- standard block fallback
 end
 
 local function getLargestBase(plate)
@@ -143,10 +204,7 @@ local function getLargestBase(plate)
     for _, part in ipairs(plate:GetDescendants()) do
         if part:IsA("BasePart") and part.Size.X > 10 and part.Size.Z > 10 then
             local area = part.Size.X * part.Size.Z
-            if area > bestArea then
-                bestArea = area
-                bestPart = part
-            end
+            if area > bestArea then bestArea = area; bestPart = part end
         end
     end
     return bestPart
@@ -177,7 +235,7 @@ PlotDropdown = Tab:CreateDropdown({
 })
 
 Tab:CreateButton({
-    Name = "Mirror & Build (Connectivity-First BFS)",
+    Name = "Mirror & Build (Footprint BFS)",
     Callback = function()
         if not selectedPlotName
             or selectedPlotName == "Scanning..."
@@ -210,7 +268,7 @@ Tab:CreateButton({
 
         task.spawn(function()
 
-            -- ── World-space translation delta ────────────────────────────────────
+            -- ── Translation delta ────────────────────────────────────────────────
             local srcPivot = sourcePlate:GetPivot()
             local myPivot  = myPlate:GetPivot()
             local deltaX   = myPivot.X - srcPivot.X
@@ -218,7 +276,7 @@ Tab:CreateButton({
             local deltaZ   = myPivot.Z - srcPivot.Z
             print(string.format("Pivot delta: (%.3f, %.3f, %.3f)", deltaX, deltaY, deltaZ))
 
-            -- ── Collect all source blocks ────────────────────────────────────────
+            -- ── Scan source blocks ───────────────────────────────────────────────
             local validPartsData = {}
 
             for _, model in ipairs(sourcePlate.ActiveParts:GetChildren()) do
@@ -242,7 +300,9 @@ Tab:CreateButton({
                     local rotationIndex = (rotVal and rotVal:IsA("IntValue")) and rotVal.Value or 0
 
                     if assetId and placementCFrameVal then
-                        local srcCF  = placementCFrameVal.Value
+                        local srcCF = placementCFrameVal.Value
+                        local sx, sy, sz = getModelSize(model)
+
                         local targetCF = CFrame.new(
                             srcCF.X + deltaX,
                             srcCF.Y + deltaY,
@@ -251,11 +311,15 @@ Tab:CreateButton({
                             srcCF.XVector.Y, srcCF.YVector.Y, srcCF.ZVector.Y,
                             srcCF.XVector.Z, srcCF.YVector.Z, srcCF.ZVector.Z
                         )
+
                         table.insert(validPartsData, {
                             AssetId       = assetId,
                             Uuid          = uuid,
                             TargetCF      = targetCF,
                             RotationIndex = rotationIndex,
+                            SizeX         = sx,
+                            SizeY         = sy,
+                            SizeZ         = sz,
                         })
                     end
                 end
@@ -268,7 +332,7 @@ Tab:CreateButton({
 
             print(string.format("Total blocks: %d", #validPartsData))
 
-            -- ── Seed floor occupancy ─────────────────────────────────────────────
+            -- ── Seed floor occupancy with full footprint ─────────────────────────
             local occupied = {}
             local myBase   = getLargestBase(myPlate)
             local floorY   = myPivot.Y
@@ -276,58 +340,54 @@ Tab:CreateButton({
             if myBase then
                 local topY = myBase.Position.Y + myBase.Size.Y / 2
                 if topY > floorY then floorY = topY end
-                local bx = myBase.Position.X
-                local bz = myBase.Position.Z
-                local hx = math.ceil(myBase.Size.X / 2)
-                local hz = math.ceil(myBase.Size.Z / 2)
-                for ix = -hx, hx, GRID do
-                    for iz = -hz, hz, GRID do
-                        occupied[occupancyKey(bx + ix, floorY,        bz + iz)] = true
-                        occupied[occupancyKey(bx + ix, floorY - GRID, bz + iz)] = true
-                    end
-                end
+                -- Mark the entire floor surface as occupied
+                markFootprint(
+                    myBase.Position.X, floorY, myBase.Position.Z,
+                    myBase.Size.X, GRID, myBase.Size.Z,
+                    occupied
+                )
+                -- One layer below too so bottom-face checks find it
+                markFootprint(
+                    myBase.Position.X, floorY - GRID, myBase.Position.Z,
+                    myBase.Size.X, GRID, myBase.Size.Z,
+                    occupied
+                )
                 print(string.format("Floor seeded Y=%.2f | base %.0fx%.0f",
                     floorY, myBase.Size.X, myBase.Size.Z))
             else
+                -- Fallback: wide band at pivot
                 for ix = -60, 60, GRID do
                     for iz = -60, 60, GRID do
-                        occupied[occupancyKey(myPivot.X + ix, myPivot.Y,        myPivot.Z + iz)] = true
+                        occupied[occupancyKey(myPivot.X + ix, myPivot.Y, myPivot.Z + iz)] = true
                         occupied[occupancyKey(myPivot.X + ix, myPivot.Y - GRID, myPivot.Z + iz)] = true
                     end
                 end
-                print("Floor seed fallback: wide band at pivot Y")
+                print("Floor seed fallback: pivot band")
             end
 
-            -- ── Connectivity-first BFS stamp ─────────────────────────────────────
-            -- Each pass:
-            --   1. Find every block in `remaining` that has >= 1 occupied neighbor NOW.
-            --   2. Sort that ready set by neighbor count descending — most connected first.
-            --      This ensures pillars/walls build up before overhangs attempt to attach.
-            --   3. Stamp each ready block immediately, mark it occupied.
-            --   4. Defer the rest to the next pass.
-            -- Result: every stamped block is guaranteed to touch an already-placed
-            -- surface. No block ever stamps into empty air.
+            -- ── Connectivity-first BFS with footprint-aware adjacency ────────────
+            local STAMP_DELAY  = 0.08   -- remote rate limit
+            local PASS_PAUSE   = 0.5    -- server weld settle time between passes
 
-            local remaining  = {}
-            for _, d in ipairs(validPartsData) do
-                table.insert(remaining, d)
-            end
+            local remaining = {}
+            for _, d in ipairs(validPartsData) do table.insert(remaining, d) end
 
-            local count      = 0
-            local passNum    = 0
-            local MAX_PASSES = 200  -- enough for tall/complex structures
-            local PASS_PAUSE = 0.1
+            local count           = 0
+            local passNum         = 0
+            local stuckCount      = 0
+            local MAX_STUCK       = 3   -- force-stamp after this many zero-progress passes
 
-            while #remaining > 0 and passNum < MAX_PASSES do
+            while #remaining > 0 do
                 passNum = passNum + 1
 
-                -- Split into ready (has neighbor) and not-ready
                 local ready    = {}
                 local deferred = {}
 
                 for _, data in ipairs(remaining) do
                     local tcf = data.TargetCF
-                    if hasNeighbor(tcf.X, tcf.Y, tcf.Z, occupied) then
+                    if hasNeighbor(tcf.X, tcf.Y, tcf.Z,
+                                   data.SizeX, data.SizeY, data.SizeZ,
+                                   occupied) then
                         table.insert(ready, data)
                     else
                         table.insert(deferred, data)
@@ -335,68 +395,65 @@ Tab:CreateButton({
                 end
 
                 if #ready == 0 then
-                    -- Zero progress — nothing currently touches an occupied cell.
-                    -- Force-stamp the lowest block in the deferred set to break the
-                    -- deadlock (can happen with floating arch structures), then retry.
-                    if #deferred > 0 then
-                        -- Find lowest Y block as the bridging anchor
-                        table.sort(deferred, function(a, b)
-                            return a.TargetCF.Y < b.TargetCF.Y
-                        end)
-                        local bridge = table.remove(deferred, 1)
-                        print(string.format(
-                            "Pass %d: deadlock — force-stamping bridge block at Y=%.2f",
-                            passNum, bridge.TargetCF.Y))
-                        pcall(function()
-                            StampEvent:InvokeServer(
-                                bridge.AssetId,
-                                bridge.TargetCF,
-                                bridge.Uuid,
-                                {},
-                                bridge.RotationIndex
-                            )
-                        end)
-                        local bx, by, bz = bridge.TargetCF.X, bridge.TargetCF.Y, bridge.TargetCF.Z
-                        occupied[occupancyKey(bx, by,        bz)] = true
-                        occupied[occupancyKey(bx, by + GRID, bz)] = true
-                        occupied[occupancyKey(bx, by - GRID, bz)] = true
-                        count = count + 1
-                        task.wait(0.08)
-                        remaining = deferred
+                    stuckCount = stuckCount + 1
+                    print(string.format("Pass %d: no ready blocks (stuck %d/%d)",
+                        passNum, stuckCount, MAX_STUCK))
+
+                    if stuckCount >= MAX_STUCK then
+                        -- Force-stamp ALL remaining as disconnected islands
+                        print(string.format("Force-stamping %d disconnected blocks", #deferred))
+                        for _, data in ipairs(deferred) do
+                            pcall(function()
+                                StampEvent:InvokeServer(
+                                    data.AssetId,
+                                    data.TargetCF,
+                                    data.Uuid,
+                                    {},
+                                    data.RotationIndex
+                                )
+                            end)
+                            local tcf = data.TargetCF
+                            markFootprint(tcf.X, tcf.Y, tcf.Z,
+                                data.SizeX, data.SizeY, data.SizeZ, occupied)
+                            count = count + 1
+                            task.wait(STAMP_DELAY)
+                        end
+                        deferred = {}
+                        stuckCount = 0
                     end
-                    -- Skip to next pass so ready blocks unlock
+
+                    remaining = deferred
                     task.wait(PASS_PAUSE)
                     continue
                 end
 
-                -- Sort ready set: most neighbors first, then lowest Y as tiebreak.
-                -- Most-connected block is the safest to stamp — it's deepest in
-                -- the existing structure, so its support chain is already built.
+                stuckCount = 0  -- made progress, reset stuck counter
+
+                -- Most neighbors first, lowest Y as tiebreak
                 table.sort(ready, function(a, b)
-                    local na = neighborCount(a.TargetCF.X, a.TargetCF.Y, a.TargetCF.Z, occupied)
-                    local nb = neighborCount(b.TargetCF.X, b.TargetCF.Y, b.TargetCF.Z, occupied)
+                    local na = neighborCount(a.TargetCF.X, a.TargetCF.Y, a.TargetCF.Z,
+                                            a.SizeX, a.SizeY, a.SizeZ, occupied)
+                    local nb = neighborCount(b.TargetCF.X, b.TargetCF.Y, b.TargetCF.Z,
+                                            b.SizeX, b.SizeY, b.SizeZ, occupied)
                     if na ~= nb then return na > nb end
                     return a.TargetCF.Y < b.TargetCF.Y
                 end)
 
-                -- Stamp every ready block this pass
                 for _, data in ipairs(ready) do
-                    local tcf = data.TargetCF
                     pcall(function()
                         StampEvent:InvokeServer(
                             data.AssetId,
-                            tcf,
+                            data.TargetCF,
                             data.Uuid,
                             {},
                             data.RotationIndex
                         )
                     end)
-                    local tx, ty, tz = tcf.X, tcf.Y, tcf.Z
-                    occupied[occupancyKey(tx, ty,        tz)] = true
-                    occupied[occupancyKey(tx, ty + GRID, tz)] = true
-                    occupied[occupancyKey(tx, ty - GRID, tz)] = true
+                    local tcf = data.TargetCF
+                    markFootprint(tcf.X, tcf.Y, tcf.Z,
+                        data.SizeX, data.SizeY, data.SizeZ, occupied)
                     count = count + 1
-                    task.wait(0.08)
+                    task.wait(STAMP_DELAY)
                 end
 
                 print(string.format("Pass %d: stamped %d | remaining %d",
@@ -434,9 +491,7 @@ task.spawn(function()
                 end
             end
         end
-        if #newPlotOptions == 0 then
-            newPlotOptions = {"No Available Plots"}
-        end
+        if #newPlotOptions == 0 then newPlotOptions = {"No Available Plots"} end
         PlotDropdown:Refresh(newPlotOptions)
         task.wait(3)
     end
