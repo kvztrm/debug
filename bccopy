@@ -5,17 +5,16 @@
     Game: NUKE! Build and Battle (Roblox)
     Framework: Rayfield UI Library
 
-    Fix iteration 5:
-    - ROTATION: CFrames now transformed through pivot space.
-      srcPivot:Inverse() * cf = plate-local CFrame.
-      myPivot * localCF = correct world CFrame on target plate.
-      Rotation is now relative to plate orientation, not world axes.
-    - AIR PLACEMENT: Replaced Y-layer grouping with BFS connectivity stamp.
-      Maintains a 3D occupancy grid of placed block positions (rounded to
-      nearest stud). A block is only stamped when at least one 6-directional
-      neighbor cell is occupied. Plate floor cells pre-populated as occupied.
-      Unready blocks deferred and retried each BFS pass until all placed.
-      Handles irregular block sizes, wedges, corners — anything non-4x4.
+    Fix iteration 6 — Cobalt-confirmed architecture:
+    - StampAsset signature: InvokeServer(assetId, CFrame, uuid, {}, rotationIndex)
+    - Server IGNORES the CFrame rotation matrix. Rotation is applied server-side
+      from the integer rotationIndex (0=default, 1=90° CCW, 2=180°, 3=270°).
+    - Position is raw world space. Translation = srcPivot→myPivot delta applied
+      to each block's world-space PlacementCFrame position.
+    - rotationIndex read from model's "Rotation" IntValue child (or 0 if absent).
+    - BFS connectivity retained: floor seeded, blocks only stamp when a 6-face
+      neighbor cell is already occupied. Handles non-4x4 blocks correctly because
+      we no longer fight the server's own rotation system.
     ================================================================================
 ]]
 
@@ -94,23 +93,15 @@ local BlockDatabase = {
     ["block - black"]             = { AssetId = 56453053,  Uuid = "{673e542a-24c6-4b26-8f2f-9dcd191bf9a6}" },
 }
 
--- GRID: snap a world position to the nearest integer stud cell.
--- All occupancy checks run in this snapped space.
-local GRID = 2  -- studs per cell — matches the game's standard block unit
-
-local function snapToGrid(x, y, z)
-    return
-        math.round(x / GRID) * GRID,
-        math.round(y / GRID) * GRID,
-        math.round(z / GRID) * GRID
-end
+-- Occupancy grid cell size. Standard block is 4 studs — use 2 so
+-- half-unit offsets from wedges/corners still find neighbors.
+local GRID = 2
 
 local function occupancyKey(x, y, z)
-    return math.round(x) .. "," .. math.round(y) .. "," .. math.round(z)
+    return math.round(x / GRID) .. "," .. math.round(y / GRID) .. "," .. math.round(z / GRID)
 end
 
--- 6-directional face neighbors in grid space
-local NEIGHBORS = {
+local NEIGHBOR_OFFSETS = {
     Vector3.new( GRID,  0,    0   ),
     Vector3.new(-GRID,  0,    0   ),
     Vector3.new( 0,     GRID, 0   ),
@@ -119,10 +110,9 @@ local NEIGHBORS = {
     Vector3.new( 0,     0,   -GRID),
 }
 
-local function hasNeighbor(ox, oy, oz, occupied)
-    for _, n in ipairs(NEIGHBORS) do
-        local key = occupancyKey(ox + n.X, oy + n.Y, oz + n.Z)
-        if occupied[key] then
+local function hasNeighbor(x, y, z, occupied)
+    for _, n in ipairs(NEIGHBOR_OFFSETS) do
+        if occupied[occupancyKey(x + n.X, y + n.Y, z + n.Z)] then
             return true
         end
     end
@@ -142,6 +132,21 @@ local function getMyPlate()
     return nil
 end
 
+-- Returns the largest flat BasePart in the plate (the floor).
+local function getLargestBase(plate)
+    local bestArea, bestPart = 0, nil
+    for _, part in ipairs(plate:GetDescendants()) do
+        if part:IsA("BasePart") and part.Size.X > 10 and part.Size.Z > 10 then
+            local area = part.Size.X * part.Size.Z
+            if area > bestArea then
+                bestArea = area
+                bestPart = part
+            end
+        end
+    end
+    return bestPart
+end
+
 PlotDropdown = Tab:CreateDropdown({
     Name = "Select Target Plot to Copy",
     Options = {"Scanning..."},
@@ -154,7 +159,7 @@ PlotDropdown = Tab:CreateDropdown({
 })
 
 Tab:CreateButton({
-    Name = "Mirror & Build (Pivot Space + BFS Connectivity)",
+    Name = "Mirror & Build (Rotation Index + BFS)",
     Callback = function()
         if not selectedPlotName or selectedPlotName == "Scanning..." or selectedPlotName == "No Available Plots" then
             Rayfield:Notify({Title = "Error", Content = "Please select a valid plot first!", Duration = 3})
@@ -162,7 +167,8 @@ Tab:CreateButton({
         end
 
         local plateNum    = selectedPlotName:match("Plate%s*(%d)")
-        local sourcePlate = plateNum and Workspace:FindFirstChild("Plates") and Workspace.Plates:FindFirstChild("Plate" .. plateNum)
+        local sourcePlate = plateNum and Workspace:FindFirstChild("Plates")
+            and Workspace.Plates:FindFirstChild("Plate" .. plateNum)
         local myPlate     = getMyPlate()
 
         if not sourcePlate or not sourcePlate:FindFirstChild("ActiveParts") then
@@ -183,15 +189,19 @@ Tab:CreateButton({
 
         task.spawn(function()
 
-            -- ── Pivot anchors ────────────────────────────────────────────────────
+            -- ── Translation delta: source pivot → target pivot ────────────────────
+            -- PlacementCFrame positions are raw world space.
+            -- We shift each one by the vector from source plate pivot to target plate pivot.
             local srcPivot = sourcePlate:GetPivot()
             local myPivot  = myPlate:GetPivot()
-            local srcPivotInv = srcPivot:Inverse()
 
-            print(string.format("Source pivot: (%.3f, %.3f, %.3f)", srcPivot.X, srcPivot.Y, srcPivot.Z))
-            print(string.format("Target pivot: (%.3f, %.3f, %.3f)", myPivot.X,  myPivot.Y,  myPivot.Z))
+            local deltaX = myPivot.X - srcPivot.X
+            local deltaY = myPivot.Y - srcPivot.Y
+            local deltaZ = myPivot.Z - srcPivot.Z
 
-            -- ── Scan source blocks ───────────────────────────────────────────────
+            print(string.format("Pivot delta: (%.3f, %.3f, %.3f)", deltaX, deltaY, deltaZ))
+
+            -- ── Scan source ActiveParts ──────────────────────────────────────────
             local validPartsData = {}
 
             for _, model in ipairs(sourcePlate.ActiveParts:GetChildren()) do
@@ -211,19 +221,35 @@ Tab:CreateButton({
                         )) .. "}")
                     local placementCFrameVal = model:FindFirstChild("PlacementCFrame")
 
+                    -- Read the rotation index the server actually uses.
+                    -- Cobalt shows it as the last InvokeServer argument.
+                    -- The game stores it on the model as an IntValue named "Rotation"
+                    -- (or "RotationIndex" — check both).
+                    local rotVal = model:FindFirstChild("Rotation")
+                        or model:FindFirstChild("RotationIndex")
+                    local rotationIndex = (rotVal and rotVal:IsA("IntValue")) and rotVal.Value or 0
+
                     if assetId and placementCFrameVal then
                         local srcCF = placementCFrameVal.Value
 
-                        -- Convert world CFrame → plate-local CFrame → target world CFrame
-                        -- This preserves layout AND rotation relative to each plate's orientation
-                        local localCF  = srcPivotInv * srcCF
-                        local targetCF = myPivot * localCF
+                        -- Translate world position by pivot delta.
+                        -- CFrame rotation matrix is sent as-is but server overwrites
+                        -- it using rotationIndex — so we preserve the source matrix
+                        -- for position integrity but rotationIndex is what actually rotates.
+                        local targetCF = CFrame.new(
+                            srcCF.X + deltaX,
+                            srcCF.Y + deltaY,
+                            srcCF.Z + deltaZ,
+                            srcCF.XVector.X, srcCF.YVector.X, srcCF.ZVector.X,
+                            srcCF.XVector.Y, srcCF.YVector.Y, srcCF.ZVector.Y,
+                            srcCF.XVector.Z, srcCF.YVector.Z, srcCF.ZVector.Z
+                        )
 
                         table.insert(validPartsData, {
-                            AssetId  = assetId,
-                            Uuid     = uuid,
-                            LocalCF  = localCF,   -- local space, used for occupancy grid
-                            TargetCF = targetCF,  -- world space on target plate, sent to server
+                            AssetId       = assetId,
+                            Uuid          = uuid,
+                            TargetCF      = targetCF,
+                            RotationIndex = rotationIndex,
                         })
                     end
                 end
@@ -236,101 +262,91 @@ Tab:CreateButton({
 
             print(string.format("Total blocks to place: %d", #validPartsData))
 
-            -- ── Seed occupancy grid with the target plate floor ──────────────────
-            -- Any block whose bottom face touches the floor is immediately eligible.
-            -- We seed the row of cells at Y = myPivot.Y (the floor surface Y)
-            -- and one cell below it so the first-layer blocks all see a neighbor.
+            -- Log first block to verify rotation index is being read
+            if validPartsData[1] then
+                local d = validPartsData[1]
+                print(string.format("Sample block — assetId: %d | rotIndex: %d | pos: (%.2f, %.2f, %.2f)",
+                    d.AssetId, d.RotationIndex, d.TargetCF.X, d.TargetCF.Y, d.TargetCF.Z))
+            end
+
+            -- ── Seed occupancy grid from target plate floor ──────────────────────
             local occupied = {}
-
-            -- Find target plate floor Y from largest flat descendant BasePart
-            local floorY = myPivot.Y
-            for _, part in ipairs(myPlate:GetDescendants()) do
-                if part:IsA("BasePart") and part.Size.X > 10 and part.Size.Z > 10 then
-                    local topY = part.Position.Y + part.Size.Y / 2
-                    if topY > floorY then floorY = topY end
-                end
-            end
-
-            -- Seed a dense grid of floor cells covering the plate XZ extent
-            -- so any block sitting on the floor has a downward neighbor hit
-            local myBase = nil
-            local bestArea = 0
-            for _, part in ipairs(myPlate:GetDescendants()) do
-                if part:IsA("BasePart") and part.Size.X > 10 and part.Size.Z > 10 then
-                    local area = part.Size.X * part.Size.Z
-                    if area > bestArea then bestArea = area; myBase = part end
-                end
-            end
+            local myBase   = getLargestBase(myPlate)
+            local floorY   = myPivot.Y
 
             if myBase then
+                local topY = myBase.Position.Y + myBase.Size.Y / 2
+                if topY > floorY then floorY = topY end
+
                 local bx = myBase.Position.X
                 local bz = myBase.Position.Z
                 local hx = math.ceil(myBase.Size.X / 2)
                 local hz = math.ceil(myBase.Size.Z / 2)
-                -- Seed floor surface cells and one layer below
+
                 for ix = -hx, hx, GRID do
                     for iz = -hz, hz, GRID do
-                        local sx, sy, sz = snapToGrid(bx + ix, floorY, bz + iz)
-                        occupied[occupancyKey(sx, sy, sz)] = true
-                        occupied[occupancyKey(sx, sy - GRID, sz)] = true
+                        -- Seed floor surface and one cell below
+                        occupied[occupancyKey(bx + ix, floorY,        bz + iz)] = true
+                        occupied[occupancyKey(bx + ix, floorY - GRID, bz + iz)] = true
                     end
                 end
-                print(string.format("Floor seeded at Y=%.2f over %dx%d stud base", floorY, myBase.Size.X, myBase.Size.Z))
+                print(string.format("Floor seeded at Y=%.2f over %.0fx%.0f base",
+                    floorY, myBase.Size.X, myBase.Size.Z))
             else
-                -- Fallback: seed just the pivot row
-                local px, py, pz = snapToGrid(myPivot.X, myPivot.Y, myPivot.Z)
-                occupied[occupancyKey(px, py, pz)] = true
-                occupied[occupancyKey(px, py - GRID, pz)] = true
-                print("Floor seed fallback: pivot cell only")
+                -- Fallback: seed a wide band at pivot Y
+                for ix = -60, 60, GRID do
+                    for iz = -60, 60, GRID do
+                        occupied[occupancyKey(myPivot.X + ix, myPivot.Y,        myPivot.Z + iz)] = true
+                        occupied[occupancyKey(myPivot.X + ix, myPivot.Y - GRID, myPivot.Z + iz)] = true
+                    end
+                end
+                print("Floor seed fallback: wide band at pivot Y")
             end
 
             -- ── BFS connectivity stamp ───────────────────────────────────────────
-            -- Each pass: stamp every block that has at least one occupied neighbor.
-            -- Mark its target position occupied. Defer the rest.
-            -- Repeat until all placed or no progress made (disconnected geometry).
-
-            local remaining = {}
-            for _, data in ipairs(validPartsData) do
-                table.insert(remaining, data)
+            local remaining  = {}
+            for _, d in ipairs(validPartsData) do
+                table.insert(remaining, d)
             end
 
-            local count       = 0
-            local passNum     = 0
-            local MAX_PASSES  = 50
-            local PASS_PAUSE  = 0.15  -- brief yield between passes
+            local count      = 0
+            local passNum    = 0
+            local MAX_PASSES = 60
+            local PASS_PAUSE = 0.15
 
             while #remaining > 0 and passNum < MAX_PASSES do
                 passNum = passNum + 1
                 local deferred   = {}
                 local passPlaced = 0
 
-                -- Sort remaining by target Y ascending within this pass
-                -- so lower blocks stamp before upper ones each wave
+                -- Lowest Y first within each pass
                 table.sort(remaining, function(a, b)
                     return a.TargetCF.Y < b.TargetCF.Y
                 end)
 
                 for _, data in ipairs(remaining) do
                     local tcf = data.TargetCF
-                    local ox, oy, oz = snapToGrid(tcf.X, tcf.Y, tcf.Z)
+                    local tx, ty, tz = tcf.X, tcf.Y, tcf.Z
 
-                    if hasNeighbor(ox, oy, oz, occupied) then
+                    if hasNeighbor(tx, ty, tz, occupied) then
                         pcall(function()
                             StampEvent:InvokeServer(
                                 data.AssetId,
                                 tcf,
                                 data.Uuid,
                                 {},
-                                0
+                                data.RotationIndex
                             )
                         end)
 
-                        -- Mark this cell and adjacent cells as occupied
-                        -- Covers blocks larger than GRID on any axis
-                        occupied[occupancyKey(ox, oy, oz)] = true
+                        -- Mark occupied at this position and directly above/below
+                        -- so blocks that sit flush on top register as connected
+                        occupied[occupancyKey(tx, ty,        tz)] = true
+                        occupied[occupancyKey(tx, ty + GRID, tz)] = true
+                        occupied[occupancyKey(tx, ty - GRID, tz)] = true
 
-                        count       = count + 1
-                        passPlaced  = passPlaced + 1
+                        count      = count + 1
+                        passPlaced = passPlaced + 1
                         task.wait(0.08)
                     else
                         table.insert(deferred, data)
@@ -340,9 +356,8 @@ Tab:CreateButton({
                 print(string.format("Pass %d: placed %d, deferred %d", passNum, passPlaced, #deferred))
 
                 if passPlaced == 0 then
-                    -- No progress — remaining blocks are structurally disconnected.
-                    -- Stamp them anyway so nothing is silently skipped.
-                    print("No progress in pass " .. passNum .. " — force-stamping " .. #deferred .. " disconnected blocks")
+                    -- Structurally disconnected remainder — force stamp so nothing is lost
+                    print(string.format("Force-stamping %d disconnected blocks", #deferred))
                     for _, data in ipairs(deferred) do
                         pcall(function()
                             StampEvent:InvokeServer(
@@ -350,7 +365,7 @@ Tab:CreateButton({
                                 data.TargetCF,
                                 data.Uuid,
                                 {},
-                                0
+                                data.RotationIndex
                             )
                         end)
                         count = count + 1
@@ -360,7 +375,6 @@ Tab:CreateButton({
                 end
 
                 remaining = deferred
-
                 if #remaining > 0 then
                     task.wait(PASS_PAUSE)
                 end
@@ -369,7 +383,7 @@ Tab:CreateButton({
             print("--- Build Complete. Total:", count, "---")
             Rayfield:Notify({
                 Title   = "Success",
-                Content = "BFS build complete! " .. count .. " blocks placed.",
+                Content = "Build complete! " .. count .. " blocks placed.",
                 Duration = 4
             })
         end)
